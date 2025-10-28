@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self';">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    <title>Research Paper Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Settings Icon -->
+    <button id="settingsBtn" class="settings-btn" title="Settings">
+        ⚙️
+    </button>
+    
+    <div class="container">
+        <div class="header">
+            <h1>📚 Research Paper Tracker</h1>
+            <p>Organize your dissertation research • Export to CSV • APA 7th edition citations</p>
+        </div>
+        
+        <div class="controls">
+            <button class="btn" id="addRowBtn">+ Add Paper Manually</button>
+            <div class="url-input-group">
+                <input type="text" id="extractedData" placeholder="Enter paper title, URL, DOI, or partial citation..." class="url-input">
+                <button class="btn btn-url" id="dataBtn">+ Add</button>
+            </div>
+            <button class="btn btn-summary" id="showSummaryBtn">📄 Show Summary</button>
+            <div class="smart-input-hint">
+                💡 <strong>Smart Input:</strong> Paste paper titles, URLs, DOIs, or partial citations - Claude will automatically extract the details!
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn btn-export" id="exportBtn">📥 Export CSV</button>
+            <button class="btn" id="clearDataBtn">🗑️ Clear All</button>
+            <input type="file" id="csvImport" accept=".csv" class="hidden-file-input" aria-label="Import CSV file">
+            <button class="btn" id="importBtn" aria-label="Import papers from CSV file">📤 Import CSV</button>
+        </div>
+
+        <div class="controls">
+            <div class="stats" id="stats">
+                <div class="stat-item">Total Papers: <span id="totalCount">0</span></div>
+                <div class="stat-item">Read: <span id="readCount">0</span></div>
+                <div class="stat-item">Reading: <span id="readingCount">0</span></div>
+                <div class="stat-item">To Read: <span id="toReadCount">0</span></div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <div class="table-header-with-toggle">
+                <h3>Papers Table</h3>
+                <button id="tableToggleBtn" class="table-toggle-btn" title="Toggle table visibility">
+                    <span class="toggle-icon">▼</span>
+                </button>
+            </div>
+            <div id="tableWrapper" class="table-wrapper collapsed">
+                <table id="paperTable">
+                    <thead>
+                        <tr>
+                            <th class="col-narrow">Actions</th>
+                            <th class="col-wide">Title</th>
+                            <th class="col-extra-wide">Authors</th>
+                            <th class="col-narrow">Year</th>
+                            <th class="col-extra-wide">Journal/Venue</th>
+                            <th class="col-extra-wide">Keywords/Tags</th>
+                            <th class="col-medium">Status</th>
+                            <th class="col-medium">Priority</th>
+                            <th class="col-narrow">Rating</th>
+                            <th class="col-medium">Date Added</th>
+                            <th class="col-notes">Key Points</th>
+                            <th class="col-notes">Notes/Relevance</th>
+                            <th class="col-notes">Citation</th>
+                            <th class="col-extra-wide">DOI/URL</th>
+                            <th class="col-extra-wide">Chapter/Topic</th>
+                        </tr>
+                    </thead>
+                    <tbody id="paperTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Papers Summary Section -->
+        <div class="summary-section">
+            <div class="summary-header">
+                <h2>📖 Papers Summary - Quick Access</h2>
+                <p>Click any title or link to access the full paper</p>
+            </div>
+            <div id="papersSummary" class="papers-grid">
+                <div class="empty-state">No papers added yet. Add some papers to see them here!</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
