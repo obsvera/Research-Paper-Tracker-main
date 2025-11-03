@@ -6,11 +6,84 @@ let batchUpdateTimeout = null;
 let errorCount = 0;
 const MAX_ERRORS = 3;
 const STORAGE_KEY = 'research-tracker-data-v1';
+const SETTINGS_KEY = 'research-tracker-settings-v1';
+
+// Papers folder management
+let papersFolderHandle = null;
+let papersFolderPath = '';
+let papersFolderUrl = ''; // Store the folder URL for opening files
+
+// IndexedDB for persistent PDF storage
+let pdfDB = null;
+const DB_NAME = 'research-paper-tracker';
+const DB_VERSION = 1;
+const PDF_STORE = 'pdfs';
 
 // Rate limiting for localStorage writes
 let lastSaveTime = 0;
 const SAVE_COOLDOWN = 1000; // 1 second between saves
 let pendingSave = false;
+
+// Global utility functions
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Validate URLs to prevent XSS and data exfiltration
+function validateUrl(url) {
+    if (!url) return null;
+    try {
+        const urlObj = new URL(url);
+        // Only allow http and https protocols
+        if (['http:', 'https:'].includes(urlObj.protocol)) {
+            // Additional safety: check for dangerous patterns
+            const dangerousPatterns = [
+                /javascript:/i,
+                /data:/i,
+                /vbscript:/i,
+                /onload/i,
+                /onerror/i,
+                /onclick/i,
+                /file:/i,
+                /ftp:/i,
+                /blob:/i,
+                /about:/i
+            ];
+            
+            const urlString = urlObj.toString().toLowerCase();
+            if (dangerousPatterns.some(pattern => pattern.test(urlString))) {
+                return null;
+            }
+            
+            // Check for suspicious domains that might be used for data exfiltration
+            const suspiciousDomains = [
+                'localhost',
+                '127.0.0.1',
+                '0.0.0.0',
+                'internal',
+                'local'
+            ];
+            
+            const hostname = urlObj.hostname.toLowerCase();
+            if (suspiciousDomains.some(domain => hostname.includes(domain))) {
+                return null;
+            }
+            
+            // Check for very long URLs (potential DoS)
+            if (urlString.length > 2000) {
+                return null;
+            }
+            
+            return url;
+        }
+    } catch (e) {
+        // Invalid URL
+    }
+    return null;
+}
 
 // Summary function
 function showSummary() {
@@ -26,67 +99,6 @@ function showSummary() {
     // Reset container for grid display
     summaryContainer.className = 'papers-grid';
     
-    // Escape HTML to prevent XSS
-    const escapeHtml = (text) => {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    };
-    
-    // Validate URLs to prevent XSS and data exfiltration
-    const validateUrl = (url) => {
-        if (!url) return null;
-        try {
-            const urlObj = new URL(url);
-            // Only allow http and https protocols
-            if (['http:', 'https:'].includes(urlObj.protocol)) {
-                // Additional safety: check for dangerous patterns
-                const dangerousPatterns = [
-                    /javascript:/i,
-                    /data:/i,
-                    /vbscript:/i,
-                    /onload/i,
-                    /onerror/i,
-                    /onclick/i,
-                    /file:/i,
-                    /ftp:/i,
-                    /blob:/i,
-                    /about:/i
-                ];
-                
-                const urlString = urlObj.toString().toLowerCase();
-                if (dangerousPatterns.some(pattern => pattern.test(urlString))) {
-                    return null;
-                }
-                
-                // Check for suspicious domains that might be used for data exfiltration
-                const suspiciousDomains = [
-                    'localhost',
-                    '127.0.0.1',
-                    '0.0.0.0',
-                    'internal',
-                    'local'
-                ];
-                
-                const hostname = urlObj.hostname.toLowerCase();
-                if (suspiciousDomains.some(domain => hostname.includes(domain))) {
-                    return null;
-                }
-                
-                // Check for very long URLs (potential DoS)
-                if (urlString.length > 2000) {
-                    return null;
-                }
-                
-                return url;
-            }
-        } catch (e) {
-            // Invalid URL
-        }
-        return null;
-    };
-    
     // Generate summary cards
     const summaryHTML = papers.map(paper => {
         const keywords = paper.keywords ? paper.keywords.split(',').map(k => k.trim()).filter(k => k) : [];
@@ -96,6 +108,7 @@ function showSummary() {
         
         const stars = paper.rating ? '★'.repeat(Math.min(parseInt(paper.rating) || 0, 5)) : '';
         const paperUrl = validateUrl(paper.doi);
+        
         
         return `
             <div class="paper-card" data-paper-id="${paper.id}">
@@ -131,7 +144,15 @@ function showSummary() {
                 </div>` : ''}
                 
                 <div class="paper-card-actions">
-                    ${paperUrl ? `<a href="${escapeHtml(paperUrl)}" target="_blank" rel="noopener noreferrer" class="paper-link">📖 Open Paper</a>` : ''}
+                    ${paperUrl || paper.hasPDF ? `
+                        <div class="paper-open-dropdown">
+                            <button class="paper-open-btn" data-paper-id="${paper.id}" title="Open paper options">📖 Open Paper ▼</button>
+                            <div class="paper-open-menu" id="dropdown-${paper.id}">
+                                ${paperUrl ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="online">🌐 Open Online</button>` : ''}
+                                ${paper.hasPDF ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="pdf">📄 Open PDF</button>` : ''}
+                            </div>
+                        </div>
+                    ` : ''}
                     <button class="copy-citation-card-btn" data-paper-id="${paper.id}" title="Copy citation to clipboard">📋 Copy Citation</button>
                 </div>
             </div>
@@ -165,7 +186,13 @@ function showSummary() {
                 copyCitationFromCard(paperId);
             }
         }
+        
+        // Note: Dropdown clicks are now handled by dedicated event listeners
+        // attached via attachDropdownEventListeners() function
     });
+    
+    // Attach event listeners to all dropdowns
+    attachDropdownEventListeners(summaryContainer);
 }
 
 // Paper management functions
@@ -173,20 +200,37 @@ function addRow() {
     try {
         const newPaper = {
             id: nextId++,
-            title: "",
-            authors: "",
-            year: "",
-            journal: "",
-            keywords: "",
-            status: "to-read",
-            priority: "medium",
-            rating: "",
-            dateAdded: new Date().toISOString().split('T')[0],
-            keyPoints: "",
-            notes: "",
-            citation: "",
-            doi: "",
-            chapter: ""
+            // New JSON structure fields (in exact order)
+            itemType: "article", // Item type (e.g., article, inproceedings, book, techreport, etc.)
+            title: "", // Full paper title
+            authors: "", // Full author names separated by commas
+            year: "", // Publication year
+            keywords: "", // keyword1, keyword2, keyword3, keyword4
+            journal: "", // Journal or venue name
+            volume: "", // Volume number
+            issue: "", // Issue number
+            pages: "", // Page range
+            doi: "", // DOI identifier or URL
+            issn: "", // ISSN if available
+            chapter: "", // Chapter or topic
+            abstract: "", // Key findings, methodology, and main contributions in 2-3 sentences
+            relevance: "", // Why this paper might be relevant to research (1-2 sentences)
+            status: "to-read", // Reading status
+            priority: "medium", // Priority level
+            rating: "", // Rating value
+            dateAdded: new Date().toISOString().split('T')[0], // Date added to tracker
+            keyPoints: "", // Key takeaways from the paper
+            notes: "", // Additional notes
+            language: "en", // Publication language
+            citation: "", // Formatted citation
+            pdf: "", // PDF file path or link
+            // Legacy fields for backward compatibility
+            url: "",
+            pdfPath: "",
+            pdfFilename: "",
+            hasPDF: false,
+            pdfSource: "none",
+            pdfBlobUrl: null
         };
         papers.push(newPaper);
         batchUpdates();
@@ -262,9 +306,13 @@ function batchUpdates(id = null) {
         try {
             if (id) updateRowStyling(id);
             updateStats();
-            showSummary();
-            // Save after UI updates (only once)
+            
+            // Save data first to ensure it's persisted
             storage.save();
+            
+            // Then regenerate summary with updated data
+            showSummary();
+            
             errorCount = 0;
         } catch (error) {
             handleError(error, 'batchUpdates');
@@ -486,12 +534,7 @@ function renderTable() {
         row.setAttribute('data-id', paper.id);
         row.className = `status-${paper.status} priority-${paper.priority}`;
         
-        // Escape HTML in user input to prevent XSS
-        const escapeHtml = (text) => {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        };
+        // Using global escapeHtml function
         
         const citationData = formatAPA7CitationHTML(paper);
         
@@ -499,11 +542,29 @@ function renderTable() {
             <td>
                 <button class="delete-btn" data-paper-id="${paper.id}">Delete</button>
             </td>
+            <td>
+                <select data-paper-id="${paper.id}" data-field="itemType">
+                    <option value="article" ${paper.itemType === 'article' ? 'selected' : ''}>Article</option>
+                    <option value="inproceedings" ${paper.itemType === 'inproceedings' ? 'selected' : ''}>Conference</option>
+                    <option value="book" ${paper.itemType === 'book' ? 'selected' : ''}>Book</option>
+                    <option value="techreport" ${paper.itemType === 'techreport' ? 'selected' : ''}>Report</option>
+                    <option value="phdthesis" ${paper.itemType === 'phdthesis' ? 'selected' : ''}>Thesis</option>
+                    <option value="misc" ${paper.itemType === 'misc' ? 'selected' : ''}>Other</option>
+                </select>
+            </td>
             <td><input type="text" data-paper-id="${paper.id}" data-field="title" value="${escapeHtml(paper.title)}" placeholder="Paper title"></td>
             <td><input type="text" data-paper-id="${paper.id}" data-field="authors" value="${escapeHtml(paper.authors)}" placeholder="Author names"></td>
             <td><input type="number" data-paper-id="${paper.id}" data-field="year" value="${escapeHtml(paper.year)}" placeholder="${new Date().getFullYear()}" min="0" max="${new Date().getFullYear() + 2}"></td>
-            <td><input type="text" data-paper-id="${paper.id}" data-field="journal" value="${escapeHtml(paper.journal)}" placeholder="Journal name"></td>
             <td><input type="text" data-paper-id="${paper.id}" data-field="keywords" value="${escapeHtml(paper.keywords)}" placeholder="keyword1, keyword2"></td>
+            <td><input type="text" data-paper-id="${paper.id}" data-field="journal" value="${escapeHtml(paper.journal)}" placeholder="Journal name"></td>
+            <td><input type="text" data-paper-id="${paper.id}" data-field="volume" value="${escapeHtml(paper.volume)}" placeholder="Vol"></td>
+            <td><input type="text" data-paper-id="${paper.id}" data-field="issue" value="${escapeHtml(paper.issue)}" placeholder="Issue"></td>
+            <td><input type="text" data-paper-id="${paper.id}" data-field="pages" value="${escapeHtml(paper.pages)}" placeholder="1-10"></td>
+            <td><input type="url" data-paper-id="${paper.id}" data-field="doi" value="${escapeHtml(paper.doi)}" placeholder="DOI or URL"></td>
+            <td><input type="text" data-paper-id="${paper.id}" data-field="issn" value="${escapeHtml(paper.issn)}" placeholder="ISSN"></td>
+            <td><input type="text" data-paper-id="${paper.id}" data-field="chapter" value="${escapeHtml(paper.chapter)}" placeholder="Chapter or topic"></td>
+            <td><textarea data-paper-id="${paper.id}" data-field="abstract" placeholder="Key findings, methodology, and main contributions...">${escapeHtml(paper.abstract)}</textarea></td>
+            <td><textarea data-paper-id="${paper.id}" data-field="relevance" placeholder="Why this paper is relevant to your research...">${escapeHtml(paper.relevance)}</textarea></td>
             <td>
                 <select data-paper-id="${paper.id}" data-field="status">
                     <option value="to-read" ${paper.status === 'to-read' ? 'selected' : ''}>To Read</option>
@@ -530,8 +591,6 @@ function renderTable() {
                 </select>
             </td>
             <td><input type="date" data-paper-id="${paper.id}" data-field="dateAdded" value="${escapeHtml(paper.dateAdded)}"></td>
-            <td><textarea data-paper-id="${paper.id}" data-field="keyPoints" placeholder="Main findings, methodology, key insights...">${escapeHtml(paper.keyPoints)}</textarea></td>
-            <td><textarea data-paper-id="${paper.id}" data-field="notes" placeholder="Relevance to dissertation, connections to other work, critical analysis...">${escapeHtml(paper.notes)}</textarea></td>
             <td>
                 <div class="citation-container">
                     <div class="citation-display" data-citation-id="${paper.id}" data-citation-text="${escapeHtml(citationData.text)}" title="Click to copy citation">
@@ -540,8 +599,18 @@ function renderTable() {
                     <button class="copy-citation-btn" data-paper-id="${paper.id}" title="Copy citation to clipboard">📋</button>
                 </div>
             </td>
-            <td><input type="url" data-paper-id="${paper.id}" data-field="doi" value="${escapeHtml(paper.doi)}" placeholder="DOI or URL"></td>
             <td><input type="text" data-paper-id="${paper.id}" data-field="chapter" value="${escapeHtml(paper.chapter)}" placeholder="Chapter 1, Literature Review, etc."></td>
+            <td class="pdf-actions">
+                <div class="pdf-actions-container">
+                    ${paper.hasPDF ? 
+                        `<button class="pdf-btn pdf-open" data-paper-id="${paper.id}" title="Open PDF">📄 Open</button>
+                         <button class="pdf-btn pdf-remove" data-paper-id="${paper.id}" title="Remove PDF">❌</button>
+                         <span class="pdf-status">✓ PDF</span>` :
+                        `<button class="pdf-btn pdf-attach" data-paper-id="${paper.id}" title="Attach PDF">📎 Attach</button>
+                         <span class="pdf-status">No PDF</span>`
+                    }
+                </div>
+            </td>
         `;
         
         tbody.appendChild(row);
@@ -636,6 +705,449 @@ function showCopyFeedback(id) {
             button.innerHTML = originalText;
             button.classList.remove('copy-success');
         }, 2000);
+    }
+}
+
+// Papers Folder Management Functions
+async function selectPapersFolder() {
+    try {
+        // Check if File System Access API is supported
+        if (!('showDirectoryPicker' in window)) {
+            alert('Folder selection requires a modern browser (Chrome/Edge). PDFs will be stored temporarily in this session only.');
+            return false;
+        }
+
+        const folderHandle = await window.showDirectoryPicker({
+            mode: 'readwrite',
+            startIn: 'documents'
+        });
+
+        if (folderHandle) {
+            papersFolderHandle = folderHandle;
+            papersFolderPath = folderHandle.name;
+            
+            // Save folder selection
+            saveSettings();
+            
+            console.log(`Papers folder selected: ${papersFolderPath}`);
+            return true;
+        }
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Error selecting papers folder:', error);
+            alert('Error selecting papers folder. Please try again.');
+        }
+    }
+    return false;
+}
+
+async function savePDFToFolder(paper, file) {
+    try {
+        if (!papersFolderHandle) {
+            // Try to load saved folder handle
+            await loadSettings();
+            if (!papersFolderHandle) {
+                // Ask user to select folder
+                const selected = await selectPapersFolder();
+                if (!selected) return null;
+            }
+        }
+
+        // Generate filename from paper data
+        const filename = generatePDFFilename(paper, file.name);
+        
+        // Create file in the papers folder
+        const fileHandle = await papersFolderHandle.getFileHandle(filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(file);
+        await writable.close();
+        
+        // Store the file path for opening later
+        const filePath = `${papersFolderPath}/${filename}`;
+        
+        console.log(`PDF saved to folder: ${filename}`);
+        return { filename, filePath };
+    } catch (error) {
+        console.error('Error saving PDF to folder:', error);
+        return null;
+    }
+}
+
+function generatePDFFilename(paper, originalName) {
+    // Get user input for filename
+    const defaultName = createDefaultFilename(paper, originalName);
+    const userInput = prompt(`Enter filename for PDF:`, defaultName);
+    
+    if (!userInput) return originalName;
+    
+    // Sanitize filename for file system
+    return sanitizeFilename(userInput);
+}
+
+function createDefaultFilename(paper, originalName) {
+    const year = paper.year || new Date().getFullYear();
+    const authors = paper.authors ? paper.authors.split(',')[0].trim().split(' ').pop() : 'Unknown';
+    const title = paper.title ? paper.title.substring(0, 50).replace(/[^\w\s-]/g, '').trim() : 'Untitled';
+    
+    return `${year}-${authors}-${title}.pdf`;
+}
+
+function sanitizeFilename(filename) {
+    // Remove or replace invalid characters
+    return filename
+        .replace(/[<>:"/\\|?*]/g, '-')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .substring(0, 200); // Limit length
+}
+
+// Settings management
+function saveSettings() {
+    try {
+        const settings = {
+            papersFolderPath: papersFolderPath,
+            lastModified: new Date().toISOString()
+        };
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch (error) {
+        console.error('Error saving settings:', error);
+    }
+}
+
+async function loadSettings() {
+    try {
+        const stored = localStorage.getItem(SETTINGS_KEY);
+        if (stored) {
+            const settings = JSON.parse(stored);
+            papersFolderPath = settings.papersFolderPath || '';
+            
+            // Note: We can't restore the folder handle across sessions
+            // User will need to reselect the folder
+        }
+    } catch (error) {
+        console.error('Error loading settings:', error);
+    }
+}
+
+// PDF Management Functions
+async function attachPDF(paperId) {
+    try {
+        const paper = papers.find(p => p.id === paperId);
+        if (!paper) return;
+
+        // Check if File System Access API is supported (Chrome/Edge)
+        if ('showOpenFilePicker' in window) {
+            const fileHandle = await window.showOpenFilePicker({
+                types: [{
+                    description: 'PDF files',
+                    accept: { 'application/pdf': ['.pdf'] }
+                }],
+                multiple: false
+            });
+
+            if (fileHandle && fileHandle.length > 0) {
+                const file = await fileHandle[0].getFile();
+                
+                // Try to save to papers folder
+                const saveResult = await savePDFToFolder(paper, file);
+                
+                if (saveResult) {
+                    // Successfully saved to folder
+                    paper.pdfPath = saveResult.filePath;
+                    paper.pdfFilename = saveResult.filename; // Store filename separately
+                    paper.pdfSource = "folder";
+                    paper.hasPDF = true;
+                    paper.pdfHandle = null; // No longer need file handle
+                    paper.pdfBlobUrl = null; // Clear any blob URL
+                } else {
+                    // Fallback to file handle storage
+                    paper.pdfHandle = fileHandle[0];
+                    paper.pdfPath = file.name;
+                    paper.pdfFilename = file.name; // Store filename separately
+                    paper.pdfSource = "local";
+                    paper.pdfBlobUrl = null; // Clear any blob URL
+                }
+                
+                paper.hasPDF = true;
+                
+                // Update UI
+                updatePaperUI(paperId);
+                storage.save();
+                
+                // Force summary update
+                const card = document.querySelector(`.paper-card[data-paper-id="${paperId}"]`);
+                if (card) {
+                    updateSummaryCardPDF(card, paperId);
+                }
+                
+                console.log(`PDF attached: ${paper.pdfPath}`);
+            }
+        } else {
+            // Fallback for Firefox and other browsers - use traditional file input with IndexedDB
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.pdf';
+            input.style.display = 'none';
+            
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    try {
+                        // Store PDF in IndexedDB for persistent storage
+                        const stored = await storePDFInIndexedDB(paperId, file, file.name);
+                        
+                        if (stored) {
+                            // Update paper data
+                            paper.pdfPath = file.name;
+                            paper.pdfFilename = file.name;
+                            paper.hasPDF = true;
+                            paper.pdfSource = "indexeddb"; // New source type for IndexedDB
+                            paper.pdfBlobUrl = null; // No need for blob URL with IndexedDB
+                            paper.pdfHandle = null;
+                            
+                            // Update UI
+                            updatePaperUI(paperId);
+                            storage.save();
+                            
+                            // Force summary update
+                            const card = document.querySelector(`.paper-card[data-paper-id="${paperId}"]`);
+                            if (card) {
+                                updateSummaryCardPDF(card, paperId);
+                            }
+                            
+                            console.log(`PDF stored in IndexedDB: ${file.name}`);
+                            
+                            // Show success message
+                            alert('PDF attached and stored persistently! Your PDF will be available across browser sessions.');
+                        } else {
+                            throw new Error('Failed to store PDF in IndexedDB');
+                        }
+                    } catch (error) {
+                        console.error('Error attaching PDF:', error);
+                        alert('Error attaching PDF. Please try again.');
+                    }
+                }
+                // Clean up the input
+                document.body.removeChild(input);
+            };
+            
+            // Add to DOM and trigger click
+            document.body.appendChild(input);
+            input.click();
+        }
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Error attaching PDF:', error);
+            alert('Error attaching PDF file. Please try again.');
+        }
+    }
+}
+
+async function openPDF(paperId) {
+    try {
+        const paper = papers.find(p => p.id === paperId);
+        if (!paper) return;
+
+        if (paper.hasPDF) {
+            if (paper.pdfSource === "folder" && papersFolderHandle) {
+                // Try to open from papers folder
+                try {
+                    // Extract filename from path
+                    const filename = paper.pdfPath.split('/').pop();
+                    const fileHandle = await papersFolderHandle.getFileHandle(filename);
+                    const file = await fileHandle.getFile();
+                    const url = URL.createObjectURL(file);
+                    window.open(url, '_blank');
+                    
+                    // Clean up the URL after a delay
+                    setTimeout(() => URL.revokeObjectURL(url), 10000);
+                } catch (error) {
+                    console.error('Error opening PDF from folder:', error);
+                    alert('Could not open PDF from folder. Please check if the file still exists.');
+                }
+            } else if (paper.pdfSource === "local") {
+                if (paper.pdfHandle) {
+                    // File System Access API (Chrome/Edge)
+                    const file = await paper.pdfHandle.getFile();
+                    const url = URL.createObjectURL(file);
+                    window.open(url, '_blank');
+                    
+                    // Clean up the URL after a delay
+                    setTimeout(() => URL.revokeObjectURL(url), 10000);
+                } else if (paper.pdfBlobUrl) {
+                    // Blob URL (Firefox/other browsers) - should be cleaned up on startup
+                    window.open(paper.pdfBlobUrl, '_blank');
+                } else {
+                    // No valid PDF source available
+                    alert('PDF file not accessible. Please reattach the PDF.');
+                    return;
+                }
+            } else if (paper.pdfSource === "file") {
+                // Legacy file source - try IndexedDB first, then show error
+                const pdfData = await getPDFFromIndexedDB(paperId);
+                if (pdfData) {
+                    // PDF found in IndexedDB, create blob URL and open
+                    const url = URL.createObjectURL(pdfData.blob);
+                    window.open(url, '_blank');
+                    // Clean up the blob URL after a delay
+                    setTimeout(() => URL.revokeObjectURL(url), 10000);
+                } else {
+                    // No PDF available - show helpful message
+                    const filename = paper.pdfFilename || paper.pdfPath.split('/').pop();
+                    alert(
+                        `PDF "${filename}" is no longer accessible.\n\n` +
+                        `Please reattach the PDF file to access it again.`
+                    );
+                }
+            } else if (paper.pdfSource === "indexeddb") {
+                // IndexedDB source - retrieve and open PDF
+                const pdfData = await getPDFFromIndexedDB(paperId);
+                if (pdfData) {
+                    const url = URL.createObjectURL(pdfData.blob);
+                    window.open(url, '_blank');
+                    // Clean up the blob URL after a delay
+                    setTimeout(() => URL.revokeObjectURL(url), 10000);
+                } else {
+                    alert('PDF not found in storage. Please reattach the PDF file.');
+                }
+            } else {
+                alert('PDF file not accessible. Please reattach the PDF.');
+            }
+        } else if (paper.doi && (paper.doi.includes('.pdf') || paper.doi.includes('pdf'))) {
+            // Open online PDF
+            window.open(paper.doi, '_blank', 'noopener,noreferrer');
+        } else if (paper.doi) {
+            // Try to open DOI/URL
+            window.open(paper.doi, '_blank', 'noopener,noreferrer');
+        } else {
+            alert('No PDF available for this paper.');
+        }
+    } catch (error) {
+        console.error('Error opening PDF:', error);
+        alert('Error opening PDF. Please try again.');
+    }
+}
+
+async function removePDF(paperId) {
+    const paper = papers.find(p => p.id === paperId);
+    if (!paper) return;
+
+    if (confirm('Remove PDF attachment from this paper?')) {
+        // Clean up blob URL if it exists
+        if (paper.pdfBlobUrl) {
+            URL.revokeObjectURL(paper.pdfBlobUrl);
+        }
+        
+        // Remove from IndexedDB if it exists there
+        if (paper.pdfSource === "indexeddb" || paper.pdfSource === "file") {
+            await removePDFFromIndexedDB(paperId);
+        }
+        
+        // Clear all PDF-related properties
+        paper.pdfHandle = null;
+        paper.pdfBlobUrl = null;
+        paper.pdfPath = "";
+        paper.pdfFilename = ""; // Clear filename
+        paper.hasPDF = false;
+        paper.pdfSource = "none";
+        
+        updatePaperUI(paperId);
+        storage.save();
+        
+        // Force summary update
+        const card = document.querySelector(`.paper-card[data-paper-id="${paperId}"]`);
+        if (card) {
+            updateSummaryCardPDF(card, paperId);
+        }
+    }
+}
+
+function updatePaperUI(paperId) {
+    // Update table row if it exists
+    const row = document.querySelector(`tr[data-id="${paperId}"]`);
+    if (row) {
+        const pdfCell = row.querySelector('.pdf-actions');
+        if (pdfCell) {
+            updatePDFCellContent(pdfCell, paperId);
+        }
+    }
+    
+    // Update summary card if it exists
+    const card = document.querySelector(`.paper-card[data-paper-id="${paperId}"]`);
+    if (card) {
+        updateSummaryCardPDF(card, paperId);
+    }
+}
+
+function updatePDFCellContent(cell, paperId) {
+    const paper = papers.find(p => p.id === paperId);
+    if (!paper) return;
+
+        if (paper.hasPDF) {
+            const statusText = paper.pdfSource === "folder" ? "✓ PDF (Folder)" : 
+                              paper.pdfSource === "local" ? "✓ PDF (Session)" : 
+                              paper.pdfSource === "indexeddb" ? "✓ PDF (Persistent)" :
+                              paper.pdfSource === "file" ? (paper.pdfBlobUrl ? "✓ PDF (Active)" : "✓ PDF (Expired)") : "✓ PDF";
+        cell.innerHTML = `
+            <div class="pdf-actions-container">
+                <button class="pdf-btn pdf-open" data-paper-id="${paperId}" title="Open PDF">📄 Open</button>
+                <button class="pdf-btn pdf-remove" data-paper-id="${paperId}" title="Remove PDF">❌</button>
+                <span class="pdf-status">${statusText}</span>
+            </div>
+        `;
+    } else {
+        cell.innerHTML = `
+            <div class="pdf-actions-container">
+                <button class="pdf-btn pdf-attach" data-paper-id="${paperId}" title="Attach PDF">📎 Attach</button>
+                <span class="pdf-status">No PDF</span>
+            </div>
+        `;
+    }
+}
+
+function updateSummaryCardPDF(card, paperId) {
+    const paper = papers.find(p => p.id === paperId);
+    if (!paper) return;
+
+    const actionsContainer = card.querySelector('.paper-card-actions');
+    if (!actionsContainer) return;
+
+    // Remove existing dropdown
+    const existingDropdown = actionsContainer.querySelector('.paper-open-dropdown');
+    if (existingDropdown) {
+        existingDropdown.remove();
+    }
+
+    // Always recreate the dropdown if there's a URL or PDF
+    const paperUrl = validateUrl(paper.doi);
+    if (paperUrl || paper.hasPDF) {
+        const dropdownHTML = `
+            <div class="paper-open-dropdown">
+                <button class="paper-open-btn" data-paper-id="${paperId}" title="Open paper options">📖 Open Paper ▼</button>
+                <div class="paper-open-menu" id="dropdown-${paperId}">
+                    ${paperUrl ? `<button class="paper-open-option" data-paper-id="${paperId}" data-action="online">🌐 Open Online</button>` : ''}
+                    ${paper.hasPDF ? `<button class="paper-open-option" data-paper-id="${paperId}" data-action="pdf">📄 Open PDF</button>` : ''}
+                </div>
+            </div>
+        `;
+        
+        // Insert before the copy citation button
+        const copyBtn = actionsContainer.querySelector('.copy-citation-card-btn');
+        if (copyBtn) {
+            copyBtn.insertAdjacentHTML('beforebegin', dropdownHTML);
+        } else {
+            actionsContainer.insertAdjacentHTML('beforeend', dropdownHTML);
+        }
+        
+        // Reattach event listeners for the new dropdown
+        attachDropdownEventListeners(actionsContainer);
+    } else {
+        // If no URL and no PDF, ensure we don't have any leftover dropdown
+        const remainingDropdown = actionsContainer.querySelector('.paper-open-dropdown');
+        if (remainingDropdown) {
+            remainingDropdown.remove();
+        }
     }
 }
 
@@ -750,26 +1262,206 @@ function updateStats() {
     document.getElementById('toReadCount').textContent = toRead;
 }
 
+// IndexedDB helper functions
+async function initIndexedDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        
+        request.onerror = () => {
+            console.error('Failed to open IndexedDB:', request.error);
+            reject(request.error);
+        };
+        
+        request.onsuccess = () => {
+            pdfDB = request.result;
+            console.log('IndexedDB initialized successfully');
+            resolve(pdfDB);
+        };
+        
+        request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(PDF_STORE)) {
+                const store = db.createObjectStore(PDF_STORE, { keyPath: 'paperId' });
+                store.createIndex('filename', 'filename', { unique: false });
+                console.log('Created PDF store in IndexedDB');
+            }
+        };
+    });
+}
+
+// Request persistent storage for all browsers
+async function requestPersistentStorage() {
+    if ('storage' in navigator && 'persist' in navigator.storage) {
+        try {
+            const isPersistent = await navigator.storage.persist();
+            if (isPersistent) {
+                console.log('Persistent storage granted');
+                return true;
+            } else {
+                console.log('Persistent storage denied, using best-effort storage');
+                return false;
+            }
+        } catch (error) {
+            console.error('Error requesting persistent storage:', error);
+            return false;
+        }
+    }
+    return false;
+}
+
+// Store PDF in IndexedDB
+async function storePDFInIndexedDB(paperId, file, filename) {
+    try {
+        if (!pdfDB) {
+            await initIndexedDB();
+        }
+        
+        const transaction = pdfDB.transaction([PDF_STORE], 'readwrite');
+        const store = transaction.objectStore(PDF_STORE);
+        
+        const pdfData = {
+            paperId: paperId,
+            filename: filename,
+            file: file,
+            blob: file, // Store the file as blob
+            timestamp: Date.now()
+        };
+        
+        await new Promise((resolve, reject) => {
+            const request = store.put(pdfData);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+        
+        console.log(`PDF stored in IndexedDB for paper ${paperId}`);
+        return true;
+    } catch (error) {
+        console.error('Error storing PDF in IndexedDB:', error);
+        return false;
+    }
+}
+
+// Retrieve PDF from IndexedDB
+async function getPDFFromIndexedDB(paperId) {
+    try {
+        if (!pdfDB) {
+            await initIndexedDB();
+        }
+        
+        const transaction = pdfDB.transaction([PDF_STORE], 'readonly');
+        const store = transaction.objectStore(PDF_STORE);
+        
+        return new Promise((resolve, reject) => {
+            const request = store.get(paperId);
+            request.onsuccess = () => {
+                if (request.result) {
+                    resolve(request.result);
+                } else {
+                    resolve(null);
+                }
+            };
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        console.error('Error retrieving PDF from IndexedDB:', error);
+        return null;
+    }
+}
+
+// Remove PDF from IndexedDB
+async function removePDFFromIndexedDB(paperId) {
+    try {
+        if (!pdfDB) {
+            await initIndexedDB();
+        }
+        
+        const transaction = pdfDB.transaction([PDF_STORE], 'readwrite');
+        const store = transaction.objectStore(PDF_STORE);
+        
+        await new Promise((resolve, reject) => {
+            const request = store.delete(paperId);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+        
+        console.log(`PDF removed from IndexedDB for paper ${paperId}`);
+        return true;
+    } catch (error) {
+        console.error('Error removing PDF from IndexedDB:', error);
+        return false;
+    }
+}
+
+// Helper function to try restoring PDF from file path
+async function tryRestorePDFFromPath(paper) {
+    try {
+        // For Firefox, try to create a file input to access the file
+        if (navigator.userAgent.includes('Firefox') || !('showOpenFilePicker' in window)) {
+            // Show a dialog to help user locate the PDF
+            const filename = paper.pdfFilename || paper.pdfPath.split('/').pop();
+            const userConfirmed = confirm(
+                `Found PDF reference: "${filename}"\n\n` +
+                `Would you like to reattach this PDF file?\n\n` +
+                `Click OK to browse for the file, or Cancel to skip.`
+            );
+            
+            if (userConfirmed) {
+                // Trigger PDF attachment for this paper
+                setTimeout(() => attachPDF(paper.id), 100);
+                return true;
+            }
+        } else {
+            // For Chrome/Edge, try to access from papers folder
+            if (papersFolderHandle && paper.pdfSource === 'folder') {
+                const filename = paper.pdfFilename || paper.pdfPath.split('/').pop();
+                try {
+                    const fileHandle = await papersFolderHandle.getFileHandle(filename);
+                    const file = await fileHandle.getFile();
+                    const url = URL.createObjectURL(file);
+                    
+                    paper.pdfBlobUrl = url;
+                    paper.pdfSource = 'folder';
+                    return true;
+                } catch (error) {
+                    console.log(`Could not restore PDF from folder: ${filename}`);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error restoring PDF:', error);
+    }
+    return false;
+}
+
 function exportToCSV() {
-    const headers = ['Title', 'Authors', 'Year', 'Journal/Venue', 'Keywords', 'Status', 'Priority', 'Rating', 'Date Added', 'Key Points', 'Notes', 'Citation', 'DOI/URL', 'Chapter/Topic'];
+    const headers = ['Item Type', 'Title', 'Authors', 'Year', 'Keywords', 'Journal/Venue', 'Volume', 'Issue', 'Pages', 'DOI/URL', 'ISSN', 'Chapter/Topic', 'Abstract', 'Relevance', 'Status', 'Priority', 'Rating', 'Date Added', 'Key Points', 'Notes', 'Language', 'Citation', 'PDF'];
     
     const csvContent = [
         headers.join(','),
         ...papers.map(paper => [
+            paper.itemType || 'article',
             `"${(paper.title || '').replace(/"/g, '""')}"`,
             `"${(paper.authors || '').replace(/"/g, '""')}"`,
             paper.year || '',
-            `"${(paper.journal || '').replace(/"/g, '""')}"`,
             `"${(paper.keywords || '').replace(/"/g, '""')}"`,
+            `"${(paper.journal || '').replace(/"/g, '""')}"`,
+            paper.volume || '',
+            paper.issue || '',
+            paper.pages || '',
+            `"${(paper.doi || '').replace(/"/g, '""')}"`,
+            paper.issn || '',
+            `"${(paper.chapter || '').replace(/"/g, '""')}"`,
+            `"${(paper.abstract || '').replace(/"/g, '""')}"`,
+            `"${(paper.relevance || '').replace(/"/g, '""')}"`,
             paper.status || '',
             paper.priority || '',
             paper.rating || '',
             paper.dateAdded || '',
             `"${(paper.keyPoints || '').replace(/"/g, '""')}"`,
             `"${(paper.notes || '').replace(/"/g, '""')}"`,
+            paper.language || 'en',
             `"${(paper.citation || '').replace(/"/g, '""')}"`,
-            `"${(paper.doi || '').replace(/"/g, '""')}"`,
-            `"${(paper.chapter || '').replace(/"/g, '""')}"`,
+            `"${(paper.pdf || '').replace(/"/g, '""')}"`
         ].join(','))
     ].join('\n');
 
@@ -781,6 +1473,209 @@ function exportToCSV() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+}
+
+// Export to JSON format
+function exportToJSON() {
+    const exportData = {
+        metadata: {
+            exportDate: new Date().toISOString(),
+            version: "1.0",
+            totalPapers: papers.length,
+            exportFormat: "Research Paper Tracker JSON"
+        },
+        papers: papers.map(paper => ({
+            id: paper.id,
+            // New JSON structure fields (in exact order)
+            itemType: paper.itemType || 'article', // Item type (e.g., article, inproceedings, book, techreport, etc.)
+            title: paper.title || '', // Full paper title
+            authors: paper.authors || '', // Full author names separated by commas
+            year: paper.year || '', // Publication year
+            keywords: paper.keywords || '', // keyword1, keyword2, keyword3, keyword4
+            journal: paper.journal || '', // Journal or venue name
+            volume: paper.volume || '', // Volume number
+            issue: paper.issue || '', // Issue number
+            pages: paper.pages || '', // Page range
+            doi: paper.doi || '', // DOI identifier or URL
+            issn: paper.issn || '', // ISSN if available
+            chapter: paper.chapter || '', // Chapter or topic
+            abstract: paper.abstract || '', // Key findings, methodology, and main contributions in 2-3 sentences
+            relevance: paper.relevance || '', // Why this paper might be relevant to research (1-2 sentences)
+            status: paper.status || 'to-read', // Reading status
+            priority: paper.priority || 'medium', // Priority level
+            rating: paper.rating || '', // Rating value
+            dateAdded: paper.dateAdded || '', // Date added to tracker
+            keyPoints: paper.keyPoints || '', // Key takeaways from the paper
+            notes: paper.notes || '', // Additional notes
+            language: paper.language || 'en', // Publication language
+            citation: paper.citation || '', // Formatted citation
+            pdf: paper.pdf || '', // PDF file path or link
+            // Legacy fields for backward compatibility
+            url: paper.url || '',
+            pdfPath: paper.pdfPath || '',
+            pdfFilename: paper.pdfFilename || '',
+            hasPDF: paper.hasPDF || false,
+            pdfSource: paper.pdfSource || 'none'
+        }))
+    };
+
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `research_papers_${new Date().toISOString().split('T')[0]}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Export to BibTeX format
+function exportToBibTeX() {
+    let bibtexContent = `% Research Paper Tracker - BibTeX Export\n`;
+    bibtexContent += `% Generated on: ${new Date().toISOString().split('T')[0]}\n`;
+    bibtexContent += `% Total papers: ${papers.length}\n\n`;
+
+    papers.forEach(paper => {
+        if (!paper.title) return; // Skip papers without titles
+        
+        // Generate BibTeX key from title and year
+        const bibtexKey = generateBibTeXKey(paper);
+        
+        // Use the itemType field to determine entry type
+        let entryType = '@misc'; // Default
+        if (paper.itemType) {
+            entryType = `@${paper.itemType}`;
+        } else if (paper.journal && paper.year) {
+            entryType = '@article';
+        } else if (paper.chapter) {
+            entryType = '@inbook';
+        }
+        
+        bibtexContent += `${entryType}{${bibtexKey},\n`;
+        bibtexContent += `  title = {${escapeBibTeX(paper.title)}},\n`;
+        
+        if (paper.authors) {
+            bibtexContent += `  author = {${escapeBibTeX(paper.authors)}},\n`;
+        }
+        
+        if (paper.year) {
+            bibtexContent += `  year = {${paper.year}},\n`;
+        }
+        
+        if (paper.journal) {
+            bibtexContent += `  journal = {${escapeBibTeX(paper.journal)}},\n`;
+        }
+        
+        if (paper.volume) {
+            bibtexContent += `  volume = {${paper.volume}},\n`;
+        }
+        
+        if (paper.issue) {
+            bibtexContent += `  number = {${paper.issue}},\n`;
+        }
+        
+        if (paper.pages) {
+            bibtexContent += `  pages = {${paper.pages}},\n`;
+        }
+        
+        if (paper.doi) {
+            bibtexContent += `  doi = {${paper.doi}},\n`;
+        }
+        
+        if (paper.url) {
+            bibtexContent += `  url = {${paper.url}},\n`;
+        }
+        
+        if (paper.issn) {
+            bibtexContent += `  issn = {${paper.issn}},\n`;
+        }
+        
+        if (paper.language && paper.language !== 'en') {
+            bibtexContent += `  language = {${paper.language}},\n`;
+        }
+        
+        if (paper.keywords) {
+            bibtexContent += `  keywords = {${escapeBibTeX(paper.keywords)}},\n`;
+        }
+        
+        // Add abstract if available
+        if (paper.abstract) {
+            bibtexContent += `  abstract = {${escapeBibTeX(paper.abstract)}},\n`;
+        }
+        
+        // Add custom fields for our tracker
+        let noteFields = [];
+        if (paper.status) noteFields.push(`Status: ${paper.status}`);
+        if (paper.priority) noteFields.push(`Priority: ${paper.priority}`);
+        if (paper.rating) noteFields.push(`Rating: ${paper.rating}/5`);
+        if (paper.relevance) noteFields.push(`Relevance: ${escapeBibTeX(paper.relevance)}`);
+        
+        if (noteFields.length > 0) {
+            bibtexContent += `  note = {${noteFields.join(', ')}},\n`;
+        }
+        
+        if (paper.chapter) {
+            bibtexContent += `  chapter = {${escapeBibTeX(paper.chapter)}},\n`;
+        }
+        
+        // Remove trailing comma and close entry
+        bibtexContent = bibtexContent.replace(/,\n$/, '\n');
+        bibtexContent += `}\n\n`;
+    });
+
+    const blob = new Blob([bibtexContent], { type: 'text/plain;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `research_papers_${new Date().toISOString().split('T')[0]}.bib`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Helper function to generate BibTeX key
+function generateBibTeXKey(paper) {
+    if (!paper.title) return 'unknown';
+    
+    // Extract first author's last name
+    let authorKey = 'unknown';
+    if (paper.authors) {
+        const firstAuthor = paper.authors.split(',')[0].trim();
+        const lastName = firstAuthor.split(' ').pop();
+        if (lastName) {
+            authorKey = lastName.toLowerCase();
+        }
+    }
+    
+    // Extract year
+    const year = paper.year || new Date().getFullYear();
+    
+    // Extract first few words of title
+    const titleWords = paper.title.toLowerCase()
+        .replace(/[^\w\s]/g, '')
+        .split(' ')
+        .filter(word => word.length > 2)
+        .slice(0, 3)
+        .join('');
+    
+    return `${authorKey}${year}${titleWords}`.substring(0, 20);
+}
+
+// Helper function to escape BibTeX special characters
+function escapeBibTeX(text) {
+    if (!text) return '';
+    return text
+        .replace(/\\/g, '\\textbackslash{}')
+        .replace(/\{/g, '\\{')
+        .replace(/\}/g, '\\}')
+        .replace(/\$/g, '\\$')
+        .replace(/&/g, '\\&')
+        .replace(/%/g, '\\%')
+        .replace(/#/g, '\\#')
+        .replace(/\^/g, '\\textasciicircum{}')
+        .replace(/_/g, '\\_')
+        .replace(/~/g, '\\textasciitilde{}');
 }
 
 function importCSV(event) {
@@ -800,12 +1695,13 @@ function importCSV(event) {
     }
     
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         try {
             const csv = e.target.result;
             const lines = csv.split('\n');
             
             let importCount = 0;
+            let pdfRestoreCount = 0;
             const maxRows = 1000; // Prevent memory issues
             
             for (let i = 1; i < Math.min(lines.length, maxRows + 1); i++) {
@@ -818,23 +1714,99 @@ function importCSV(event) {
                 
                 const cleanValue = (val) => val ? val.replace(/^"|"$/g, '').trim() : '';
                 
-                const paper = {
-                    id: nextId++,
-                    title: cleanValue(values[0]).substring(0, 500),
-                    authors: cleanValue(values[1]).substring(0, 500),
-                    year: cleanValue(values[2]).substring(0, 4),
-                    journal: cleanValue(values[3]).substring(0, 300),
-                    keywords: cleanValue(values[4]).substring(0, 500),
-                    status: ['to-read', 'reading', 'read', 'skimmed'].includes(cleanValue(values[5])) ? cleanValue(values[5]) : 'to-read',
-                    priority: ['low', 'medium', 'high'].includes(cleanValue(values[6])) ? cleanValue(values[6]) : 'medium',
-                    rating: ['1','2','3','4','5'].includes(cleanValue(values[7])) ? cleanValue(values[7]) : '',
-                    dateAdded: cleanValue(values[8]) || new Date().toISOString().split('T')[0],
-                    keyPoints: cleanValue(values[9]).substring(0, 2000),
-                    notes: cleanValue(values[10]).substring(0, 1000),
-                    citation: cleanValue(values[11]).substring(0, 1000),
-                    doi: cleanValue(values[12]).substring(0, 500),
-                    chapter: cleanValue(values[13]).substring(0, 200)
-                };
+                // Handle different CSV formats (backward compatibility)
+                // New format has more columns, so we need to detect the format
+                const isNewFormat = values.length >= 20; // New format has more columns
+                
+                let paper;
+                if (isNewFormat) {
+                    // New format with all fields
+                    const pdfStatus = cleanValue(values[19] || '');
+                    const pdfSource = cleanValue(values[20] || '');
+                    const pdfPath = cleanValue(values[21] || '');
+                    const pdfFilename = cleanValue(values[22] || '');
+                    
+                    paper = {
+                        id: nextId++,
+                        itemType: cleanValue(values[0]) || 'article',
+                        title: cleanValue(values[1]).substring(0, 500),
+                        authors: cleanValue(values[2]).substring(0, 500),
+                        year: cleanValue(values[3]).substring(0, 4),
+                        journal: cleanValue(values[4]).substring(0, 300),
+                        volume: cleanValue(values[5]).substring(0, 50),
+                        issue: cleanValue(values[6]).substring(0, 50),
+                        pages: cleanValue(values[7]).substring(0, 100),
+                        doi: cleanValue(values[8]).substring(0, 500),
+                        url: cleanValue(values[8]).substring(0, 500), // Same as DOI for now
+                        issn: cleanValue(values[9]).substring(0, 50),
+                        language: cleanValue(values[10]) || 'en',
+                        keywords: cleanValue(values[11]).substring(0, 500),
+                        abstract: cleanValue(values[12]).substring(0, 2000),
+                        relevance: cleanValue(values[13]).substring(0, 1000),
+                        status: ['to-read', 'reading', 'read', 'skimmed'].includes(cleanValue(values[14])) ? cleanValue(values[14]) : 'to-read',
+                        priority: ['low', 'medium', 'high'].includes(cleanValue(values[15])) ? cleanValue(values[15]) : 'medium',
+                        rating: ['1','2','3','4','5'].includes(cleanValue(values[16])) ? cleanValue(values[16]) : '',
+                        dateAdded: cleanValue(values[17]) || new Date().toISOString().split('T')[0],
+                        citation: cleanValue(values[18]).substring(0, 1000),
+                        chapter: cleanValue(values[19]).substring(0, 200),
+                        hasPDF: pdfStatus === 'Yes' || pdfStatus === 'true',
+                        pdfSource: ['folder', 'local', 'file', 'online', 'none', 'indexeddb'].includes(pdfSource) ? pdfSource : 'none',
+                        pdfPath: pdfPath || '',
+                        pdfFilename: pdfFilename || '',
+                        pdfBlobUrl: null,
+                        pdfHandle: null,
+                        // Legacy fields for backward compatibility
+                        keyPoints: cleanValue(values[12]).substring(0, 2000),
+                        notes: cleanValue(values[13]).substring(0, 1000)
+                    };
+                } else {
+                    // Old format - backward compatibility
+                    const pdfStatus = cleanValue(values[14] || '');
+                    const pdfSource = cleanValue(values[15] || '');
+                    const pdfPath = cleanValue(values[16] || '');
+                    const pdfFilename = cleanValue(values[17] || '');
+                    
+                    paper = {
+                        id: nextId++,
+                        itemType: 'article', // Default for old format
+                        title: cleanValue(values[0]).substring(0, 500),
+                        authors: cleanValue(values[1]).substring(0, 500),
+                        year: cleanValue(values[2]).substring(0, 4),
+                        journal: cleanValue(values[3]).substring(0, 300),
+                        volume: '',
+                        issue: '',
+                        pages: '',
+                        doi: cleanValue(values[12]).substring(0, 500),
+                        url: cleanValue(values[12]).substring(0, 500),
+                        issn: '',
+                        language: 'en',
+                        keywords: cleanValue(values[4]).substring(0, 500),
+                        abstract: cleanValue(values[9]).substring(0, 2000),
+                        relevance: cleanValue(values[10]).substring(0, 1000),
+                        status: ['to-read', 'reading', 'read', 'skimmed'].includes(cleanValue(values[5])) ? cleanValue(values[5]) : 'to-read',
+                        priority: ['low', 'medium', 'high'].includes(cleanValue(values[6])) ? cleanValue(values[6]) : 'medium',
+                        rating: ['1','2','3','4','5'].includes(cleanValue(values[7])) ? cleanValue(values[7]) : '',
+                        dateAdded: cleanValue(values[8]) || new Date().toISOString().split('T')[0],
+                        citation: cleanValue(values[11]).substring(0, 1000),
+                        chapter: cleanValue(values[13]).substring(0, 200),
+                        hasPDF: pdfStatus === 'Yes' || pdfStatus === 'true',
+                        pdfSource: ['folder', 'local', 'file', 'online', 'none'].includes(pdfSource) ? pdfSource : 'none',
+                        pdfPath: pdfPath || '',
+                        pdfFilename: pdfFilename || '',
+                        pdfBlobUrl: null,
+                        pdfHandle: null,
+                        // Legacy fields for backward compatibility
+                        keyPoints: cleanValue(values[9]).substring(0, 2000),
+                        notes: cleanValue(values[10]).substring(0, 1000)
+                    };
+                }
+                
+                // Try to restore PDF if file path exists
+                if (paper.hasPDF && paper.pdfPath && paper.pdfSource === 'file') {
+                    if (await tryRestorePDFFromPath(paper)) {
+                        pdfRestoreCount++;
+                    }
+                }
                 
                 papers.push(paper);
                 importCount++;
@@ -844,7 +1816,13 @@ function importCSV(event) {
                 renderTable();
                 updateStats();
                 showSummary();
-                alert(`Successfully imported ${importCount} papers`);
+                storage.save();
+                
+                let message = `Successfully imported ${importCount} papers`;
+                if (pdfRestoreCount > 0) {
+                    message += ` and restored ${pdfRestoreCount} PDF references`;
+                }
+                alert(message);
             } else {
                 alert('No valid papers found in the CSV file');
             }
@@ -852,7 +1830,8 @@ function importCSV(event) {
             // Clear the file input to prevent re-submission
             event.target.value = '';
         } catch (error) {
-            alert('Error reading CSV file. Please check the file format');
+            console.error('CSV import error:', error);
+            alert('Error importing CSV file. Please check the file format.');
         }
     };
     
@@ -861,6 +1840,324 @@ function importCSV(event) {
     };
     
     reader.readAsText(file);
+}
+
+// Import from JSON format
+function importJSON(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Validate file type
+    if (!file.name.toLowerCase().endsWith('.json')) {
+        alert('Please select a JSON file');
+        return;
+    }
+    
+    // Validate file size (limit to 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        alert('File is too large. Please select a file smaller than 10MB');
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const jsonData = JSON.parse(e.target.result);
+            
+            // Validate JSON structure
+            if (!jsonData.papers || !Array.isArray(jsonData.papers)) {
+                alert('Invalid JSON format. Expected "papers" array.');
+                return;
+            }
+            
+            let importCount = 0;
+            let pdfRestoreCount = 0;
+            const maxRows = 1000; // Prevent memory issues
+            
+            for (let i = 0; i < Math.min(jsonData.papers.length, maxRows); i++) {
+                const paperData = jsonData.papers[i];
+                
+                // Create paper object with validation
+                const paper = {
+                    id: nextId++,
+                    // New JSON structure fields
+                    itemType: paperData.itemType || 'article',
+                    title: paperData.title || '',
+                    authors: paperData.authors || '',
+                    year: paperData.year || '',
+                    journal: paperData.journal || '',
+                    volume: paperData.volume || '',
+                    issue: paperData.issue || '',
+                    pages: paperData.pages || '',
+                    doi: paperData.doi || '',
+                    url: paperData.url || paperData.doi || '',
+                    issn: paperData.issn || '',
+                    language: paperData.language || 'en',
+                    dateAdded: paperData.dateAdded || new Date().toISOString().split('T')[0],
+                    keywords: paperData.keywords || '',
+                    abstract: paperData.abstract || '',
+                    relevance: paperData.relevance || '',
+                    // Legacy fields for backward compatibility
+                    status: ['to-read', 'reading', 'read', 'skimmed'].includes(paperData.status) ? paperData.status : 'to-read',
+                    priority: ['low', 'medium', 'high'].includes(paperData.priority) ? paperData.priority : 'medium',
+                    rating: paperData.rating || '',
+                    keyPoints: paperData.keyPoints || paperData.abstract || '',
+                    notes: paperData.notes || paperData.relevance || '',
+                    citation: paperData.citation || '',
+                    chapter: paperData.chapter || '',
+                    
+                    // Handle PDF data (both old and new format)
+                    hasPDF: paperData.pdf ? (paperData.pdf.hasPDF || false) : (paperData.hasPDF || false),
+                    pdfSource: paperData.pdf ? (paperData.pdf.source || 'none') : (paperData.pdfSource || 'none'),
+                    pdfPath: paperData.pdf ? (paperData.pdf.path || '') : (paperData.pdfPath || ''),
+                    pdfFilename: paperData.pdf ? (paperData.pdf.filename || '') : (paperData.pdfFilename || ''),
+                    pdfBlobUrl: null,
+                    pdfHandle: null
+                };
+                
+                // Try to restore PDF if file path exists
+                if (paper.hasPDF && paper.pdfPath && paper.pdfSource === 'file') {
+                    if (await tryRestorePDFFromPath(paper)) {
+                        pdfRestoreCount++;
+                    }
+                }
+                
+                papers.push(paper);
+                importCount++;
+            }
+            
+            if (importCount > 0) {
+                renderTable();
+                updateStats();
+                showSummary();
+                storage.save();
+                
+                let message = `Successfully imported ${importCount} papers from JSON`;
+                if (pdfRestoreCount > 0) {
+                    message += ` and restored ${pdfRestoreCount} PDF references`;
+                }
+                alert(message);
+            } else {
+                alert('No valid papers found in the JSON file');
+            }
+            
+            // Clear the file input
+            event.target.value = '';
+        } catch (error) {
+            console.error('JSON import error:', error);
+            alert('Error importing JSON file. Please check the file format.');
+        }
+    };
+    
+    reader.readAsText(file);
+}
+
+// Import from BibTeX format
+function importBibTeX(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Validate file type
+    if (!file.name.toLowerCase().endsWith('.bib')) {
+        alert('Please select a BibTeX file (.bib)');
+        return;
+    }
+    
+    // Validate file size (limit to 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        alert('File is too large. Please select a file smaller than 10MB');
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const bibtexContent = e.target.result;
+            const papers = parseBibTeX(bibtexContent);
+            
+            let importCount = 0;
+            const maxRows = 1000; // Prevent memory issues
+            
+            for (let i = 0; i < Math.min(papers.length, maxRows); i++) {
+                const bibtexPaper = papers[i];
+                
+                // Create paper object from BibTeX entry
+                const paper = {
+                    id: nextId++,
+                    title: bibtexPaper.title || '',
+                    authors: bibtexPaper.author || '',
+                    year: bibtexPaper.year || '',
+                    journal: bibtexPaper.journal || '',
+                    keywords: bibtexPaper.keywords || '',
+                    status: 'to-read', // Default status
+                    priority: 'medium', // Default priority
+                    rating: '',
+                    dateAdded: new Date().toISOString().split('T')[0],
+                    keyPoints: '',
+                    notes: bibtexPaper.note || '',
+                    citation: '', // Will be generated
+                    doi: bibtexPaper.doi || '',
+                    chapter: bibtexPaper.chapter || '',
+                    hasPDF: false,
+                    pdfSource: 'none',
+                    pdfPath: '',
+                    pdfFilename: '',
+                    pdfBlobUrl: null,
+                    pdfHandle: null
+                };
+                
+                // Generate citation
+                paper.citation = generateCitation(paper);
+                
+                papers.push(paper);
+                importCount++;
+            }
+            
+            if (importCount > 0) {
+                renderTable();
+                updateStats();
+                showSummary();
+                storage.save();
+                
+                alert(`Successfully imported ${importCount} papers from BibTeX`);
+            } else {
+                alert('No valid papers found in the BibTeX file');
+            }
+            
+            // Clear the file input
+            event.target.value = '';
+        } catch (error) {
+            console.error('BibTeX import error:', error);
+            alert('Error importing BibTeX file. Please check the file format.');
+        }
+    };
+    
+    reader.readAsText(file);
+}
+
+// Parse BibTeX content
+function parseBibTeX(content) {
+    const papers = [];
+    const entries = content.split('@');
+    
+    for (let entry of entries) {
+        if (!entry.trim()) continue;
+        
+        const lines = entry.split('\n');
+        const paper = {};
+        
+        for (let line of lines) {
+            line = line.trim();
+            if (!line || line.startsWith('%') || line === '{' || line === '}') continue;
+            
+            // Extract field name and value
+            const match = line.match(/^(\w+)\s*=\s*\{([^}]*)\},?\s*$/);
+            if (match) {
+                const fieldName = match[1].toLowerCase();
+                const fieldValue = match[2].trim();
+                
+                // Map BibTeX fields to our paper fields
+                switch (fieldName) {
+                    case 'title':
+                        paper.title = fieldValue;
+                        break;
+                    case 'author':
+                        paper.author = fieldValue;
+                        break;
+                    case 'year':
+                        paper.year = fieldValue;
+                        break;
+                    case 'journal':
+                        paper.journal = fieldValue;
+                        break;
+                    case 'doi':
+                        paper.doi = fieldValue;
+                        break;
+                    case 'keywords':
+                        paper.keywords = fieldValue;
+                        break;
+                    case 'note':
+                        paper.note = fieldValue;
+                        break;
+                    case 'chapter':
+                        paper.chapter = fieldValue;
+                        break;
+                    case 'url':
+                        if (!paper.doi) paper.doi = fieldValue;
+                        break;
+                }
+            }
+        }
+        
+        if (paper.title) {
+            papers.push(paper);
+        }
+    }
+    
+    return papers;
+}
+
+// Import/Export help modal
+function showCSVImportInstructions() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📚 Import/Export Formats</h3>
+                <button class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h4>📄 JSON Format (Recommended)</h4>
+                <p><strong>Best for:</strong> Data portability, backup, and advanced users</p>
+                <ul>
+                    <li><strong>Structure:</strong> Hierarchical data with metadata</li>
+                    <li><strong>PDF Support:</strong> Full PDF information preserved</li>
+                    <li><strong>Compatibility:</strong> Works with any modern tool</li>
+                    <li><strong>Human Readable:</strong> Easy to edit manually</li>
+                </ul>
+                
+                <h4>📚 BibTeX Format (Academic Standard)</h4>
+                <p><strong>Best for:</strong> Academic writing, LaTeX, dissertation work</p>
+                <ul>
+                    <li><strong>Academic Standard:</strong> Used by universities worldwide</li>
+                    <li><strong>LaTeX Integration:</strong> Perfect for dissertation writing</li>
+                    <li><strong>Citation Managers:</strong> Works with Zotero, EndNote, Mendeley</li>
+                    <li><strong>Open Source:</strong> No licensing restrictions</li>
+                </ul>
+                
+                <h4>📥 CSV Format (Universal)</h4>
+                <p><strong>Best for:</strong> Basic compatibility, spreadsheet users</p>
+                <ul>
+                    <li><strong>Universal:</strong> Works with Excel, Google Sheets</li>
+                    <li><strong>Simple:</strong> Easy to understand and edit</li>
+                    <li><strong>Backward Compatible:</strong> Old files still work</li>
+                    <li><strong>PDF Support:</strong> File paths and metadata included</li>
+                </ul>
+                
+                <h4>🔄 Import Features</h4>
+                <ul>
+                    <li><strong>All Formats:</strong> Automatic PDF restoration when possible</li>
+                    <li><strong>Validation:</strong> Data integrity checks and error handling</li>
+                    <li><strong>Migration:</strong> Convert between formats seamlessly</li>
+                    <li><strong>Large Files:</strong> Support for up to 1000 papers</li>
+                </ul>
+                
+                <div class="modal-actions">
+                    <button class="btn" onclick="this.closest('.modal').remove()">Got it!</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    
+    // Close modal handlers
+    modal.querySelector('.close-btn').onclick = () => modal.remove();
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+    };
 }
 
 // Safe CSV line parsing to prevent ReDoS attacks
@@ -930,7 +2227,7 @@ async function addFromSmartInput() {
         }
         
         // Validate required JSON structure for paper info
-        const validKeys = ['title', 'authors', 'year', 'journal', 'keywords', 'abstract', 'url', 'relevance'];
+        const validKeys = ['itemType', 'title', 'authors', 'year', 'keywords', 'journal', 'volume', 'issue', 'pages', 'doi', 'issn', 'chapter', 'abstract', 'relevance', 'language', 'citation', 'pdf'];
         const hasValidStructure = Object.keys(paperInfo).some(key => validKeys.includes(key));
         
         if (!hasValidStructure) {
@@ -941,14 +2238,14 @@ async function addFromSmartInput() {
         showPreviewModal(paperInfo);
         return;
     } catch (e) {
-        // Not valid JSON or not paper structure - show Claude prompt instead
-        showClaudePrompt(input);
+        // Not valid JSON or not paper structure - show AI prompt instead
+        showAIPrompt(input);
         return;
     }
 }
 
-// Show Claude prompt for user to copy
-function showClaudePrompt(input) {
+// Show AI prompt for user to copy
+function showAIPrompt(input) {
     // Sanitize input to prevent XSS
     const sanitizeInput = (text) => {
         if (!text) return '';
@@ -967,14 +2264,23 @@ function showClaudePrompt(input) {
 Please analyze this and return the information in this exact JSON format:
 
 {
+  "itemType": "Item type (article, inproceedings, book, techreport, phdthesis, misc)",
   "title": "Full paper title",
-  "authors": "Author names in APA format (Last, F. M., Last, F. M., & Last, F. M.)",
+  "authors": "Full author names separated by commas",
   "year": "Publication year",
-  "journal": "Journal or venue name",
   "keywords": "keyword1, keyword2, keyword3, keyword4",
+  "journal": "Journal or venue name",
+  "volume": "Volume number",
+  "issue": "Issue number", 
+  "pages": "Page range (e.g., 123-145)",
+  "doi": "DOI identifier or URL",
+  "issn": "ISSN if available",
+  "chapter": "Chapter or topic",
   "abstract": "Key findings, methodology, and main contributions in 2-3 sentences",
-  "url": "DOI link or paper URL",
-  "relevance": "Why this paper might be relevant to research (1-2 sentences)"
+  "relevance": "Why this paper might be relevant to research (1-2 sentences)",
+  "language": "Publication language (default: en)",
+  "citation": "Formatted citation",
+  "pdf": "PDF file path or link"
 }
 
 Please ensure the JSON is properly formatted and fill in as much information as possible. If you cannot find certain fields, use empty strings but keep the JSON structure intact.`;
@@ -984,20 +2290,20 @@ Please ensure the JSON is properly formatted and fill in as much information as 
     modal.innerHTML = `
         <div class="modal">
             <div class="modal-header">
-                <h3 class="modal-title">📋 Copy This Prompt to Claude</h3>
-                <button class="modal-close" id="claude-close-btn">&times;</button>
+                <h3 class="modal-title">📋 Copy This Prompt to Your AI Assistant</h3>
+                <button class="modal-close" id="ai-close-btn">&times;</button>
             </div>
             <div class="modal-content">
-                <p class="claude-instructions">
-                    Copy the prompt below, paste it into your Claude chat, then copy the JSON response back into the input field.
+                <p class="ai-instructions">
+                    Copy the prompt below, paste it into your AI assistant (Claude, ChatGPT, Gemini, Copilot, etc.), then copy the JSON response back into the input field.
                 </p>
                 <div class="modal-field">
-                    <textarea id="claude-prompt" readonly class="claude-prompt-textarea">${prompt}</textarea>
+                    <textarea id="ai-prompt" readonly class="ai-prompt-textarea">${prompt}</textarea>
                 </div>
             </div>
             <div class="modal-actions">
-                <button class="modal-btn modal-btn-secondary" id="claude-cancel-btn">Close</button>
-                <button class="modal-btn modal-btn-primary" id="claude-copy-btn">📋 Copy Prompt</button>
+                <button class="modal-btn modal-btn-secondary" id="ai-cancel-btn">Close</button>
+                <button class="modal-btn modal-btn-primary" id="ai-copy-btn">📋 Copy Prompt</button>
             </div>
         </div>
     `;
@@ -1005,13 +2311,13 @@ Please ensure the JSON is properly formatted and fill in as much information as 
     document.body.appendChild(modal);
     
     // Add event listeners for modal buttons
-    document.getElementById('claude-close-btn').addEventListener('click', closeClaudePromptModal);
-    document.getElementById('claude-cancel-btn').addEventListener('click', closeClaudePromptModal);
-    document.getElementById('claude-copy-btn').addEventListener('click', copyClaudePrompt);
+    document.getElementById('ai-close-btn').addEventListener('click', closeAIPromptModal);
+    document.getElementById('ai-cancel-btn').addEventListener('click', closeAIPromptModal);
+    document.getElementById('ai-copy-btn').addEventListener('click', copyAIPrompt);
     
     // Focus and select the textarea
     setTimeout(() => {
-        const textarea = document.getElementById('claude-prompt');
+        const textarea = document.getElementById('ai-prompt');
         if (textarea) {
             textarea.focus();
             textarea.select();
@@ -1019,30 +2325,30 @@ Please ensure the JSON is properly formatted and fill in as much information as 
     }, 100);
 }
 
-// Close Claude prompt modal
-function closeClaudePromptModal() {
+// Close AI prompt modal
+function closeAIPromptModal() {
     const modal = document.querySelector('.modal-overlay');
     if (modal) {
         document.body.removeChild(modal);
     }
 }
 
-// Copy Claude prompt to clipboard
-function copyClaudePrompt() {
-    const textarea = document.getElementById('claude-prompt');
+// Copy AI prompt to clipboard
+function copyAIPrompt() {
+    const textarea = document.getElementById('ai-prompt');
     if (textarea) {
         const text = textarea.value;
         
         // Try modern clipboard API first
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(text).then(() => {
-                showClaudeCopyFeedback();
+                showAICopyFeedback();
             }).catch(() => {
                 // Fallback to execCommand
         textarea.select();
                 try {
         document.execCommand('copy');
-                    showClaudeCopyFeedback();
+                    showAICopyFeedback();
                 } catch (err) {
                     console.warn('Copy failed:', err);
                     alert('Copy failed. Please select and copy the text manually.');
@@ -1053,7 +2359,7 @@ function copyClaudePrompt() {
             textarea.select();
             try {
                 document.execCommand('copy');
-                showClaudeCopyFeedback();
+                showAICopyFeedback();
             } catch (err) {
                 console.warn('Copy failed:', err);
                 alert('Copy failed. Please select and copy the text manually.');
@@ -1062,7 +2368,7 @@ function copyClaudePrompt() {
     }
 }
 
-function showClaudeCopyFeedback() {
+function showAICopyFeedback() {
         const button = document.querySelector('.modal-btn-primary');
         if (button) {
             const originalText = button.innerHTML;
@@ -1078,23 +2384,26 @@ function showClaudeCopyFeedback() {
 
 // Show preview modal with extracted information
 function showPreviewModal(paperInfo) {
-    // Validate and sanitize paperInfo
-    const escapeHtml = (text) => {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text.toString();
-        return div.innerHTML;
-    };
+    // Validate and sanitize paperInfo using global escapeHtml function
     
     const sanitizedPaper = {
+        itemType: escapeHtml(paperInfo.itemType || 'article'),
         title: escapeHtml(paperInfo.title || ''),
         authors: escapeHtml(paperInfo.authors || ''),
         year: escapeHtml(paperInfo.year || ''),
-        journal: escapeHtml(paperInfo.journal || ''),
         keywords: escapeHtml(paperInfo.keywords || ''),
+        journal: escapeHtml(paperInfo.journal || ''),
+        volume: escapeHtml(paperInfo.volume || ''),
+        issue: escapeHtml(paperInfo.issue || ''),
+        pages: escapeHtml(paperInfo.pages || ''),
+        doi: escapeHtml(paperInfo.doi || ''),
+        issn: escapeHtml(paperInfo.issn || ''),
+        chapter: escapeHtml(paperInfo.chapter || ''),
         abstract: escapeHtml(paperInfo.abstract || ''),
-        url: escapeHtml(paperInfo.url || ''),
-        relevance: escapeHtml(paperInfo.relevance || '')
+        relevance: escapeHtml(paperInfo.relevance || ''),
+        language: escapeHtml(paperInfo.language || 'en'),
+        citation: escapeHtml(paperInfo.citation || ''),
+        pdf: escapeHtml(paperInfo.pdf || '')
     };
     
     const modal = document.createElement('div');
@@ -1106,6 +2415,17 @@ function showPreviewModal(paperInfo) {
                 <button class="modal-close" id="preview-close-btn">&times;</button>
             </div>
             <div class="modal-content">
+                <div class="modal-field">
+                    <label>Item Type</label>
+                    <select id="preview-itemType">
+                        <option value="article" ${sanitizedPaper.itemType === 'article' ? 'selected' : ''}>Article</option>
+                        <option value="inproceedings" ${sanitizedPaper.itemType === 'inproceedings' ? 'selected' : ''}>Conference</option>
+                        <option value="book" ${sanitizedPaper.itemType === 'book' ? 'selected' : ''}>Book</option>
+                        <option value="techreport" ${sanitizedPaper.itemType === 'techreport' ? 'selected' : ''}>Report</option>
+                        <option value="phdthesis" ${sanitizedPaper.itemType === 'phdthesis' ? 'selected' : ''}>Thesis</option>
+                        <option value="misc" ${sanitizedPaper.itemType === 'misc' ? 'selected' : ''}>Other</option>
+                    </select>
+                </div>
                 <div class="modal-field">
                     <label>Title</label>
                     <input type="text" id="preview-title" value="${sanitizedPaper.title}" maxlength="500">
@@ -1119,24 +2439,56 @@ function showPreviewModal(paperInfo) {
                     <input type="number" id="preview-year" value="${sanitizedPaper.year}" min="0" max="${new Date().getFullYear() + 2}">
                 </div>
                 <div class="modal-field">
-                    <label>Journal/Venue</label>
-                    <input type="text" id="preview-journal" value="${sanitizedPaper.journal}" maxlength="300">
-                </div>
-                <div class="modal-field">
                     <label>Keywords</label>
                     <input type="text" id="preview-keywords" value="${sanitizedPaper.keywords}" maxlength="500">
                 </div>
                 <div class="modal-field">
-                    <label>Key Points/Abstract</label>
+                    <label>Journal/Venue</label>
+                    <input type="text" id="preview-journal" value="${sanitizedPaper.journal}" maxlength="300">
+                </div>
+                <div class="modal-field">
+                    <label>Volume</label>
+                    <input type="text" id="preview-volume" value="${sanitizedPaper.volume}" maxlength="50">
+                </div>
+                <div class="modal-field">
+                    <label>Issue</label>
+                    <input type="text" id="preview-issue" value="${sanitizedPaper.issue}" maxlength="50">
+                </div>
+                <div class="modal-field">
+                    <label>Pages</label>
+                    <input type="text" id="preview-pages" value="${sanitizedPaper.pages}" maxlength="100" placeholder="123-145">
+                </div>
+                <div class="modal-field">
+                    <label>DOI</label>
+                    <input type="text" id="preview-doi" value="${sanitizedPaper.doi}" maxlength="500">
+                </div>
+                <div class="modal-field">
+                    <label>ISSN</label>
+                    <input type="text" id="preview-issn" value="${sanitizedPaper.issn}" maxlength="50">
+                </div>
+                <div class="modal-field">
+                    <label>Chapter/Topic</label>
+                    <input type="text" id="preview-chapter" value="${sanitizedPaper.chapter}" maxlength="200">
+                </div>
+                <div class="modal-field">
+                    <label>Abstract</label>
                     <textarea id="preview-abstract" maxlength="2000">${sanitizedPaper.abstract}</textarea>
                 </div>
                 <div class="modal-field">
-                    <label>DOI/URL</label>
-                    <input type="url" id="preview-url" value="${sanitizedPaper.url}" maxlength="500">
+                    <label>Relevance</label>
+                    <textarea id="preview-relevance" maxlength="1000">${sanitizedPaper.relevance}</textarea>
                 </div>
                 <div class="modal-field">
-                    <label>Relevance/Notes</label>
-                    <textarea id="preview-relevance" maxlength="1000">${sanitizedPaper.relevance}</textarea>
+                    <label>Language</label>
+                    <input type="text" id="preview-language" value="${sanitizedPaper.language}" maxlength="10" placeholder="en">
+                </div>
+                <div class="modal-field">
+                    <label>Citation</label>
+                    <input type="text" id="preview-citation" value="${sanitizedPaper.citation}" maxlength="1000">
+                </div>
+                <div class="modal-field">
+                    <label>PDF</label>
+                    <input type="text" id="preview-pdf" value="${sanitizedPaper.pdf}" maxlength="500">
                 </div>
             </div>
             <div class="modal-actions">
@@ -1173,33 +2525,58 @@ function addPaperFromPreview() {
     const titleEl = document.getElementById('preview-title');
     const authorsEl = document.getElementById('preview-authors');
     const yearEl = document.getElementById('preview-year');
-    const journalEl = document.getElementById('preview-journal');
     const keywordsEl = document.getElementById('preview-keywords');
+    const journalEl = document.getElementById('preview-journal');
+    const volumeEl = document.getElementById('preview-volume');
+    const issueEl = document.getElementById('preview-issue');
+    const pagesEl = document.getElementById('preview-pages');
+    const doiEl = document.getElementById('preview-doi');
+    const issnEl = document.getElementById('preview-issn');
+    const chapterEl = document.getElementById('preview-chapter');
     const abstractEl = document.getElementById('preview-abstract');
-    const urlEl = document.getElementById('preview-url');
     const relevanceEl = document.getElementById('preview-relevance');
+    const languageEl = document.getElementById('preview-language');
+    const citationEl = document.getElementById('preview-citation');
+    const pdfEl = document.getElementById('preview-pdf');
     
-    if (!titleEl || !authorsEl || !yearEl || !journalEl || !keywordsEl || !abstractEl || !urlEl || !relevanceEl) {
+    if (!titleEl || !authorsEl || !yearEl || !keywordsEl || !journalEl || !abstractEl || !relevanceEl) {
         alert('Error: Could not find all required form fields');
         return;
     }
     
     const newPaper = {
         id: nextId++,
-        title: titleEl.value || '',
-        authors: authorsEl.value || '',
-        year: yearEl.value || '',
-        journal: journalEl.value || '',
-        keywords: keywordsEl.value || '',
-        status: "to-read",
-        priority: "medium",
-        rating: "",
-        dateAdded: new Date().toISOString().split('T')[0],
-        keyPoints: abstractEl.value || '',
-        notes: relevanceEl.value || '',
-        citation: "",
-        doi: urlEl.value || '',
-        chapter: ""
+        // New JSON structure fields (in exact order)
+        itemType: "article", // Item type (e.g., article, inproceedings, book, techreport, etc.)
+        title: titleEl.value || '', // Full paper title
+        authors: authorsEl.value || '', // Full author names separated by commas
+        year: yearEl.value || '', // Publication year
+        keywords: keywordsEl.value || '', // keyword1, keyword2, keyword3, keyword4
+        journal: journalEl.value || '', // Journal or venue name
+        volume: volumeEl ? volumeEl.value || '' : '', // Volume number
+        issue: issueEl ? issueEl.value || '' : '', // Issue number
+        pages: pagesEl ? pagesEl.value || '' : '', // Page range
+        doi: doiEl ? doiEl.value || '' : '', // DOI identifier or URL
+        issn: issnEl ? issnEl.value || '' : '', // ISSN if available
+        chapter: chapterEl ? chapterEl.value || '' : '', // Chapter or topic
+        abstract: abstractEl.value || '', // Key findings, methodology, and main contributions in 2-3 sentences
+        relevance: relevanceEl.value || '', // Why this paper might be relevant to research (1-2 sentences)
+        status: "to-read", // Reading status
+        priority: "medium", // Priority level
+        rating: "", // Rating value
+        dateAdded: new Date().toISOString().split('T')[0], // Date added to tracker
+        keyPoints: abstractEl.value || '', // Key takeaways from the paper
+        notes: relevanceEl.value || '', // Additional notes
+        language: languageEl ? languageEl.value || 'en' : 'en', // Publication language
+        citation: citationEl ? citationEl.value || '' : '', // Formatted citation
+        pdf: pdfEl ? pdfEl.value || '' : '', // PDF file path or link
+        // Legacy fields for backward compatibility
+        url: doiEl ? doiEl.value || '' : '',
+        pdfPath: "",
+        pdfFilename: "",
+        hasPDF: false,
+        pdfSource: "none",
+        pdfBlobUrl: null
     };
     
     // Auto-generate citation
@@ -1342,21 +2719,38 @@ const storage = {
                 
                 return {
                 id: Number(p.id) || nextId++,
-                title: String(p.title || '').slice(0, 500),
-                authors: String(p.authors || '').slice(0, 500),
-                    year: validYear,
-                journal: String(p.journal || '').slice(0, 300),
-                keywords: String(p.keywords || '').slice(0, 500),
-                status: ['to-read', 'reading', 'read', 'skimmed'].includes(p.status) ? p.status : 'to-read',
-                priority: ['low', 'medium', 'high'].includes(p.priority) ? p.priority : 'medium',
-                rating: ['1','2','3','4','5'].includes(p.rating) ? p.rating : '',
-                dateAdded: p.dateAdded || new Date().toISOString().split('T')[0],
-                keyPoints: String(p.keyPoints || '').slice(0, 2000),
-                notes: String(p.notes || '').slice(0, 1000),
-                citation: String(p.citation || '').slice(0, 1000),
-                doi: String(p.doi || '').slice(0, 500),
-                chapter: String(p.chapter || '').slice(0, 200)
-                };
+                // New JSON structure fields (in exact order)
+                itemType: String(p.itemType || 'article').slice(0, 50), // Item type (e.g., article, inproceedings, book, techreport, etc.)
+                title: String(p.title || '').slice(0, 500), // Full paper title
+                authors: String(p.authors || '').slice(0, 500), // Full author names separated by commas
+                year: validYear, // Publication year
+                keywords: String(p.keywords || '').slice(0, 500), // keyword1, keyword2, keyword3, keyword4
+                journal: String(p.journal || '').slice(0, 300), // Journal or venue name
+                volume: String(p.volume || '').slice(0, 50), // Volume number
+                issue: String(p.issue || '').slice(0, 50), // Issue number
+                pages: String(p.pages || '').slice(0, 100), // Page range
+                doi: String(p.doi || '').slice(0, 500), // DOI identifier or URL
+                issn: String(p.issn || '').slice(0, 50), // ISSN if available
+                chapter: String(p.chapter || '').slice(0, 200), // Chapter or topic
+                abstract: String(p.abstract || '').slice(0, 2000), // Key findings, methodology, and main contributions in 2-3 sentences
+                relevance: String(p.relevance || '').slice(0, 1000), // Why this paper might be relevant to research (1-2 sentences)
+                status: ['to-read', 'reading', 'read', 'skimmed'].includes(p.status) ? p.status : 'to-read', // Reading status
+                priority: ['low', 'medium', 'high'].includes(p.priority) ? p.priority : 'medium', // Priority level
+                rating: ['1','2','3','4','5'].includes(p.rating) ? p.rating : '', // Rating value
+                dateAdded: p.dateAdded || new Date().toISOString().split('T')[0], // Date added to tracker
+                keyPoints: String(p.keyPoints || p.abstract || '').slice(0, 2000), // Key takeaways from the paper
+                notes: String(p.notes || p.relevance || '').slice(0, 1000), // Additional notes
+                language: String(p.language || 'en').slice(0, 10), // Publication language
+                citation: String(p.citation || '').slice(0, 1000), // Formatted citation
+                pdf: String(p.pdf || p.pdfPath || '').slice(0, 500), // PDF file path or link
+                // Legacy fields for backward compatibility
+                url: String(p.url || '').slice(0, 500),
+                pdfPath: String(p.pdfPath || ''),
+                pdfFilename: String(p.pdfFilename || '').slice(0, 200),
+                hasPDF: Boolean(p.hasPDF || false),
+                pdfSource: ['folder', 'local', 'online', 'none', 'indexeddb'].includes(p.pdfSource) ? p.pdfSource : 'none',
+                pdfBlobUrl: p.pdfBlobUrl || null
+            };
             });
             
             // Ensure nextId is higher than any existing id
@@ -1379,17 +2773,186 @@ const storage = {
     }
 };
 
+// Migration function for existing data
+function migrateToNewFormat() {
+    let migrated = false;
+    
+    papers.forEach(paper => {
+        // Check if this paper needs migration (missing new fields)
+        if (!paper.hasOwnProperty('itemType')) {
+            paper.itemType = 'article'; // Default item type
+            migrated = true;
+        }
+        
+        if (!paper.hasOwnProperty('volume')) {
+            paper.volume = '';
+            migrated = true;
+        }
+        
+        if (!paper.hasOwnProperty('issue')) {
+            paper.issue = '';
+            migrated = true;
+        }
+        
+        if (!paper.hasOwnProperty('pages')) {
+            paper.pages = '';
+            migrated = true;
+        }
+        
+        if (!paper.hasOwnProperty('url')) {
+            paper.url = paper.doi || ''; // Use DOI as URL if available
+            migrated = true;
+        }
+        
+        if (!paper.hasOwnProperty('issn')) {
+            paper.issn = '';
+            migrated = true;
+        }
+        
+        if (!paper.hasOwnProperty('language')) {
+            paper.language = 'en'; // Default language
+            migrated = true;
+        }
+        
+        if (!paper.hasOwnProperty('abstract')) {
+            // Migrate keyPoints to abstract if available
+            paper.abstract = paper.keyPoints || '';
+            migrated = true;
+        }
+        
+        if (!paper.hasOwnProperty('relevance')) {
+            // Migrate notes to relevance if available
+            paper.relevance = paper.notes || '';
+            migrated = true;
+        }
+        
+        if (!paper.hasOwnProperty('pdfFilename')) {
+            paper.pdfFilename = '';
+            migrated = true;
+        }
+    });
+    
+    if (migrated) {
+        console.log('Migrated existing data to new format');
+        storage.save();
+    }
+    
+    return migrated;
+}
+
+// Migrate existing PDFs to IndexedDB
+async function migratePDFsToIndexedDB() {
+    let migratedCount = 0;
+    
+    for (const paper of papers) {
+        if (paper.hasPDF && paper.pdfSource === "file" && paper.pdfBlobUrl) {
+            try {
+                // Check if PDF is already in IndexedDB
+                const existingPDF = await getPDFFromIndexedDB(paper.id);
+                if (!existingPDF) {
+                    // Convert blob URL to file and store in IndexedDB
+                    const response = await fetch(paper.pdfBlobUrl);
+                    const blob = await response.blob();
+                    
+                    const stored = await storePDFInIndexedDB(paper.id, blob, paper.pdfFilename || paper.pdfPath);
+                    if (stored) {
+                        // Update paper source
+                        paper.pdfSource = "indexeddb";
+                        paper.pdfBlobUrl = null; // Clear blob URL
+                        migratedCount++;
+                        console.log(`Migrated PDF for paper ${paper.id} to IndexedDB`);
+                    }
+                }
+            } catch (error) {
+                console.error(`Error migrating PDF for paper ${paper.id}:`, error);
+            }
+        }
+    }
+    
+    if (migratedCount > 0) {
+        console.log(`Migrated ${migratedCount} PDFs to IndexedDB`);
+        storage.save(); // Save the updated paper data
+    }
+}
+
+// Clean up invalid blob URLs on startup
+function cleanupInvalidBlobUrls() {
+    let cleanedCount = 0;
+    
+    // Check if this is a new session by looking for a session marker
+    const sessionMarker = sessionStorage.getItem('research-tracker-session');
+    const isNewSession = !sessionMarker;
+    
+    if (isNewSession) {
+        // Mark this as a new session
+        sessionStorage.setItem('research-tracker-session', 'active');
+        
+        // Clear all blob URLs in new sessions as they're not persistent
+        papers.forEach(paper => {
+            if (paper.pdfBlobUrl && paper.pdfSource === "local") {
+                console.log(`Clearing blob URL for paper ${paper.id} (new session)`);
+                paper.pdfBlobUrl = null;
+                paper.hasPDF = false;
+                paper.pdfSource = "none";
+                paper.pdfPath = "";
+                cleanedCount++;
+            } else if (paper.pdfBlobUrl && paper.pdfSource === "file") {
+                // For Firefox file sources, just clear the blob URL but keep the file info
+                console.log(`Clearing blob URL for paper ${paper.id} (new session, keeping file info)`);
+                paper.pdfBlobUrl = null;
+                cleanedCount++;
+            }
+        });
+    } else {
+        // Same session, keep blob URLs as they should still be valid
+        console.log('Same session detected, keeping blob URLs');
+    }
+    
+    if (cleanedCount > 0) {
+        console.log(`Cleaned up ${cleanedCount} blob URLs (new session)`);
+        storage.save();
+    }
+}
+
 // Initialize the application
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('DOM loaded, initializing app');
+    
+    // Initialize IndexedDB and request persistent storage
+    try {
+        await initIndexedDB();
+        await requestPersistentStorage();
+    } catch (error) {
+        console.error('Error initializing storage:', error);
+    }
+    
+    // Load settings first
+    await loadSettings();
     
     if (storage.load()) {
         console.log('Loaded saved research data');
-        // Ensure table is rendered when data is loaded
-        renderTable();
+        
+        // Clean up invalid blob URLs BEFORE any UI generation
+        cleanupInvalidBlobUrls();
+        
+        // Migrate existing data to new format
+        migrateToNewFormat();
+        
+        // Migrate any existing PDFs to IndexedDB if needed
+        await migratePDFsToIndexedDB();
     }
+    
+    // Render UI after data is cleaned
+    renderTable();
     updateStats();
     showSummary();
+    
+    // Show browser-specific message
+    if (navigator.userAgent.includes('Firefox')) {
+        console.log('Firefox detected - PDF functionality with persistent IndexedDB storage');
+    } else if (navigator.userAgent.includes('Safari')) {
+        console.log('Safari detected - PDF functionality with persistent IndexedDB storage');
+    }
     
     // Add event listeners for all buttons
     console.log('Initializing event listeners');
@@ -1403,14 +2966,31 @@ function initializeEventListeners() {
     document.getElementById('addRowBtn').addEventListener('click', addRow);
     document.getElementById('dataBtn').addEventListener('click', addFromSmartInput);
     document.getElementById('showSummaryBtn').addEventListener('click', showSummary);
+    
+    // Export buttons
     document.getElementById('exportBtn').addEventListener('click', exportToCSV);
-    document.getElementById('clearDataBtn').addEventListener('click', clearData);
+    document.getElementById('exportJSONBtn').addEventListener('click', exportToJSON);
+    document.getElementById('exportBibTeXBtn').addEventListener('click', exportToBibTeX);
+    
+    // Import buttons
     document.getElementById('importBtn').addEventListener('click', () => {
         document.getElementById('csvImport').click();
     });
+    document.getElementById('importJSONBtn').addEventListener('click', () => {
+        document.getElementById('jsonImport').click();
+    });
+    document.getElementById('importBibTeXBtn').addEventListener('click', () => {
+        document.getElementById('bibtexImport').click();
+    });
     
-    // CSV import handler
+    // Utility buttons
+    document.getElementById('clearDataBtn').addEventListener('click', clearData);
+    document.getElementById('csvHelpBtn').addEventListener('click', showCSVImportInstructions);
+    
+    // Import handlers
     document.getElementById('csvImport').addEventListener('change', importCSV);
+    document.getElementById('jsonImport').addEventListener('change', importJSON);
+    document.getElementById('bibtexImport').addEventListener('change', importBibTeX);
     
     // Enter key support for smart input
     document.getElementById('extractedData').addEventListener('keypress', function(e) {
@@ -1451,6 +3031,28 @@ function setupTableEventDelegation() {
             const paperId = parseInt(e.target.getAttribute('data-paper-id'));
             if (paperId) {
                 copyCitation(paperId);
+            }
+        }
+        
+        // Handle PDF buttons
+        if (e.target.classList.contains('pdf-attach')) {
+            const paperId = parseInt(e.target.getAttribute('data-paper-id'));
+            if (paperId) {
+                attachPDF(paperId);
+            }
+        }
+        
+        if (e.target.classList.contains('pdf-open')) {
+            const paperId = parseInt(e.target.getAttribute('data-paper-id'));
+            if (paperId) {
+                openPDF(paperId);
+            }
+        }
+        
+        if (e.target.classList.contains('pdf-remove')) {
+            const paperId = parseInt(e.target.getAttribute('data-paper-id'));
+            if (paperId) {
+                removePDF(paperId);
             }
         }
     });
@@ -1532,6 +3134,28 @@ function showSettingsModal() {
                 <button class="settings-close" id="settingsCloseBtn">&times;</button>
             </div>
             <div class="settings-section">
+                <h4 class="settings-section-title">PDF Storage</h4>
+                <div class="pdf-storage-settings">
+                    <div class="storage-info">
+                        <p>Choose a folder to store PDF files permanently. This allows you to access PDFs across browser sessions.</p>
+                        <div class="current-folder">
+                            <strong>Current folder:</strong> 
+                            <span id="currentFolderPath">${papersFolderPath || 'Not selected'}</span>
+                        </div>
+                    </div>
+                    <div class="storage-actions">
+                        <button class="btn" id="selectFolderBtn">📁 Select Papers Folder</button>
+                        <button class="btn btn-secondary" id="clearFolderBtn" ${!papersFolderPath ? 'disabled' : ''}>🗑️ Clear Folder</button>
+                    </div>
+                            <div class="storage-note">
+                                <small><strong>Browser Compatibility:</strong><br>
+                                • Chrome/Edge: Folder-based storage + IndexedDB persistent storage<br>
+                                • Firefox/Safari: IndexedDB persistent storage (all browsers)<br>
+                                • All browsers: PDFs stored persistently across sessions</small>
+                            </div>
+                </div>
+            </div>
+            <div class="settings-section">
                 <h4 class="settings-section-title">Page Style</h4>
                 <div class="theme-option" data-theme="default">
                     <div class="theme-preview theme-preview-default"></div>
@@ -1569,6 +3193,9 @@ function showSettingsModal() {
     
     // Add event listeners
     document.getElementById('settingsCloseBtn').addEventListener('click', closeSettingsModal);
+    document.getElementById('selectFolderBtn').addEventListener('click', handleSelectFolder);
+    document.getElementById('clearFolderBtn').addEventListener('click', handleClearFolder);
+    
     modal.addEventListener('click', function(e) {
         if (e.target === modal) {
             closeSettingsModal();
@@ -1599,6 +3226,49 @@ function closeSettingsModal() {
     const modal = document.querySelector('.settings-modal');
     if (modal) {
         document.body.removeChild(modal);
+    }
+}
+
+// Handle folder selection
+async function handleSelectFolder() {
+    const selected = await selectPapersFolder();
+    if (selected) {
+        // Update the UI to show the selected folder
+        const folderPathElement = document.getElementById('currentFolderPath');
+        if (folderPathElement) {
+            folderPathElement.textContent = papersFolderPath;
+        }
+        
+        // Enable the clear button
+        const clearBtn = document.getElementById('clearFolderBtn');
+        if (clearBtn) {
+            clearBtn.disabled = false;
+        }
+        
+        alert(`Papers folder selected: ${papersFolderPath}\n\nNew PDFs will be saved to this folder.`);
+    }
+}
+
+// Handle folder clearing
+function handleClearFolder() {
+    if (confirm('Clear the selected papers folder? This will not delete any files, but new PDFs will be stored temporarily.')) {
+        papersFolderHandle = null;
+        papersFolderPath = '';
+        saveSettings();
+        
+        // Update the UI
+        const folderPathElement = document.getElementById('currentFolderPath');
+        if (folderPathElement) {
+            folderPathElement.textContent = 'Not selected';
+        }
+        
+        // Disable the clear button
+        const clearBtn = document.getElementById('clearFolderBtn');
+        if (clearBtn) {
+            clearBtn.disabled = true;
+        }
+        
+        alert('Papers folder cleared. PDFs will be stored temporarily in this session only.');
     }
 }
 
@@ -1645,12 +3315,121 @@ function loadTheme() {
     }
 }
 
+// Attach event listeners to dropdown elements
+function attachDropdownEventListeners(container) {
+    // Handle paper open dropdown clicks
+    const dropdownButtons = container.querySelectorAll('.paper-open-btn');
+    dropdownButtons.forEach(button => {
+        // Remove existing listeners to prevent duplicates
+        button.removeEventListener('click', handleDropdownClick);
+        button.addEventListener('click', handleDropdownClick);
+    });
+    
+    // Handle paper open option clicks
+    const dropdownOptions = container.querySelectorAll('.paper-open-option');
+    dropdownOptions.forEach(option => {
+        // Remove existing listeners to prevent duplicates
+        option.removeEventListener('click', handleDropdownOptionClick);
+        option.addEventListener('click', handleDropdownOptionClick);
+    });
+}
+
+// Handle dropdown button clicks
+function handleDropdownClick(event) {
+    event.stopPropagation();
+    const paperId = parseInt(event.target.getAttribute('data-paper-id'));
+    if (paperId) {
+        togglePaperDropdown(paperId);
+    }
+}
+
+// Handle dropdown option clicks
+function handleDropdownOptionClick(event) {
+    event.stopPropagation();
+    const paperId = parseInt(event.target.getAttribute('data-paper-id'));
+    const action = event.target.getAttribute('data-action');
+    if (paperId && action) {
+        handlePaperOpenAction(paperId, action);
+    }
+}
+
+// Paper dropdown functions
+function togglePaperDropdown(paperId) {
+    // Close all other dropdowns first
+    const allDropdowns = document.querySelectorAll('.paper-open-menu');
+    allDropdowns.forEach(dropdown => {
+        if (dropdown.id !== `dropdown-${paperId}`) {
+            dropdown.classList.remove('show');
+        }
+    });
+    
+    // Toggle the clicked dropdown
+    const dropdown = document.getElementById(`dropdown-${paperId}`);
+    if (dropdown) {
+        dropdown.classList.toggle('show');
+    }
+}
+
+function handlePaperOpenAction(paperId, action) {
+    const paper = papers.find(p => p.id === paperId);
+    if (!paper) return;
+    
+    // Close the dropdown
+    const dropdown = document.getElementById(`dropdown-${paperId}`);
+    if (dropdown) {
+        dropdown.classList.remove('show');
+    }
+    
+    if (action === 'online') {
+        // Open online link
+        const paperUrl = validateUrl(paper.doi);
+        if (paperUrl) {
+            try {
+                const urlObj = new URL(paperUrl);
+                if (['http:', 'https:'].includes(urlObj.protocol)) {
+                    window.open(paperUrl, '_blank', 'noopener,noreferrer');
+                }
+            } catch (e) {
+                console.warn('Invalid URL:', paperUrl);
+                alert('Invalid URL for this paper.');
+            }
+        } else {
+            alert('No valid URL available for this paper.');
+        }
+    } else if (action === 'pdf') {
+        // Open PDF
+        openPDF(paperId);
+    }
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', function(event) {
+    if (!event.target.closest('.paper-open-dropdown')) {
+        const allDropdowns = document.querySelectorAll('.paper-open-menu');
+        allDropdowns.forEach(dropdown => {
+            dropdown.classList.remove('show');
+        });
+    }
+});
+
+// Cleanup blob URLs to prevent memory leaks
+function cleanupBlobUrls() {
+    papers.forEach(paper => {
+        if (paper.pdfBlobUrl) {
+            URL.revokeObjectURL(paper.pdfBlobUrl);
+            paper.pdfBlobUrl = null;
+        }
+    });
+}
+
 // Save data before tab/window closes
 window.addEventListener('beforeunload', () => {
     if (papers.length > 0) {
         // Force immediate save
         storage.save();
     }
+    // Cleanup blob URLs
+    cleanupBlobUrls();
 });
 
 window.addEventListener('unload', () => {
@@ -1661,4 +3440,6 @@ window.addEventListener('unload', () => {
     if (papers.length > 0) {
         storage.save();
     }
+    // Cleanup blob URLs
+    cleanupBlobUrls();
 });

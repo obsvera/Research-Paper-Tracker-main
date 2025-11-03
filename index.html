@@ -30,15 +30,28 @@
             </div>
             <button class="btn btn-summary" id="showSummaryBtn">📄 Show Summary</button>
             <div class="smart-input-hint">
-                💡 <strong>Smart Input:</strong> Paste paper titles, URLs, DOIs, or partial citations - Claude will automatically extract the details!
+                💡 <strong>Smart Input:</strong> Paste paper titles, URLs, DOIs, or partial citations - any AI assistant can automatically extract the details!
             </div>
         </div>
         
         <div class="controls">
-            <button class="btn btn-export" id="exportBtn">📥 Export CSV</button>
-            <button class="btn" id="clearDataBtn">🗑️ Clear All</button>
-            <input type="file" id="csvImport" accept=".csv" class="hidden-file-input" aria-label="Import CSV file">
-            <button class="btn" id="importBtn" aria-label="Import papers from CSV file">📤 Import CSV</button>
+            <div class="export-group">
+                <button class="btn btn-export" id="exportBtn">📥 Export CSV</button>
+                <button class="btn btn-export" id="exportJSONBtn">📄 Export JSON</button>
+                <button class="btn btn-export" id="exportBibTeXBtn">📚 Export BibTeX</button>
+            </div>
+            <div class="import-group">
+                <input type="file" id="csvImport" accept=".csv" class="hidden-file-input" aria-label="Import CSV file">
+                <input type="file" id="jsonImport" accept=".json" class="hidden-file-input" aria-label="Import JSON file">
+                <input type="file" id="bibtexImport" accept=".bib" class="hidden-file-input" aria-label="Import BibTeX file">
+                <button class="btn" id="importBtn" aria-label="Import papers from CSV file">📤 Import CSV</button>
+                <button class="btn" id="importJSONBtn" aria-label="Import papers from JSON file">📄 Import JSON</button>
+                <button class="btn" id="importBibTeXBtn" aria-label="Import papers from BibTeX file">📚 Import BibTeX</button>
+            </div>
+            <div class="utility-group">
+                <button class="btn" id="clearDataBtn">🗑️ Clear All</button>
+                <button class="btn btn-secondary" id="csvHelpBtn" aria-label="Show import/export help">❓ Help</button>
+            </div>
         </div>
 
         <div class="controls">
@@ -62,20 +75,29 @@
                     <thead>
                         <tr>
                             <th class="col-narrow">Actions</th>
+                            <th class="col-medium">Type</th>
                             <th class="col-wide">Title</th>
                             <th class="col-extra-wide">Authors</th>
                             <th class="col-narrow">Year</th>
+                            <th class="col-extra-wide">Keywords</th>
                             <th class="col-extra-wide">Journal/Venue</th>
-                            <th class="col-extra-wide">Keywords/Tags</th>
+                            <th class="col-narrow">Vol</th>
+                            <th class="col-narrow">Issue</th>
+                            <th class="col-narrow">Pages</th>
+                            <th class="col-extra-wide">DOI/URL</th>
+                            <th class="col-narrow">ISSN</th>
+                            <th class="col-extra-wide">Chapter/Topic</th>
+                            <th class="col-notes">Abstract</th>
+                            <th class="col-notes">Relevance</th>
                             <th class="col-medium">Status</th>
                             <th class="col-medium">Priority</th>
                             <th class="col-narrow">Rating</th>
                             <th class="col-medium">Date Added</th>
                             <th class="col-notes">Key Points</th>
-                            <th class="col-notes">Notes/Relevance</th>
+                            <th class="col-notes">Notes</th>
+                            <th class="col-narrow">Lang</th>
                             <th class="col-notes">Citation</th>
-                            <th class="col-extra-wide">DOI/URL</th>
-                            <th class="col-extra-wide">Chapter/Topic</th>
+                            <th class="col-pdf">PDF</th>
                         </tr>
                     </thead>
                     <tbody id="paperTableBody">

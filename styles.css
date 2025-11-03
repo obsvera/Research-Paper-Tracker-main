@@ -112,6 +112,31 @@ body {
     flex-wrap: wrap;
 }
 
+.export-group,
+.import-group,
+.utility-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.export-group {
+    border-right: 1px solid var(--border-color);
+    padding-right: 15px;
+    margin-right: 15px;
+}
+
+.import-group {
+    border-right: 1px solid var(--border-color);
+    padding-right: 15px;
+    margin-right: 15px;
+}
+
+.utility-group {
+    margin-left: auto;
+}
+
 .url-input-group {
     display: flex;
     gap: 5px;
@@ -222,13 +247,13 @@ body {
 }
 
 /* Modal styles */
-.claude-instructions {
+.ai-instructions {
     margin-bottom: 16px;
     color: #666;
     font-size: 14px;
 }
 
-.claude-prompt-textarea {
+.ai-prompt-textarea {
     min-height: 300px;
     font-family: monospace;
     font-size: 13px;
@@ -338,7 +363,7 @@ body {
 table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 1600px;
+    min-width: 2400px;
 }
 
 th {
@@ -687,6 +712,280 @@ textarea {
 .rating-stars {
     color: #ffc107;
     font-size: 14px;
+}
+
+/* PDF Management Styles */
+.pdf-actions-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: center;
+    min-width: 80px;
+}
+
+.pdf-btn {
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.pdf-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+}
+
+.pdf-btn:active {
+    transform: translateY(0);
+}
+
+.pdf-attach {
+    background: #28a745;
+}
+
+.pdf-attach:hover {
+    background: #218838;
+}
+
+.pdf-open {
+    background: #007bff;
+}
+
+.pdf-open:hover {
+    background: #0056b3;
+}
+
+.pdf-remove {
+    background: #dc3545;
+    padding: 2px 6px;
+    font-size: 10px;
+}
+
+.pdf-remove:hover {
+    background: #c82333;
+}
+
+.pdf-status {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: center;
+    font-weight: 500;
+}
+
+.pdf-open-card {
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-left: 8px;
+    transition: all 0.2s ease;
+}
+
+.pdf-open-card:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+}
+
+/* PDF column styling */
+.col-pdf {
+    min-width: 100px;
+    text-align: center;
+}
+
+/* Paper Open Dropdown Styles */
+.paper-open-dropdown {
+    position: relative;
+    display: inline-block;
+    margin-right: 8px;
+}
+
+.paper-open-btn {
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.paper-open-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+}
+
+.paper-open-btn:active {
+    transform: translateY(0);
+}
+
+.paper-open-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    min-width: 140px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s ease;
+}
+
+.paper-open-menu.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.paper-open-option {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    font-size: 12px;
+    color: #333;
+    transition: background-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.paper-open-option:hover {
+    background-color: #f5f5f5;
+}
+
+.paper-open-option:first-child {
+    border-radius: 4px 4px 0 0;
+}
+
+.paper-open-option:last-child {
+    border-radius: 0 0 4px 4px;
+}
+
+.paper-open-option:only-child {
+    border-radius: 4px;
+}
+
+/* Dark theme support for dropdown */
+[data-theme="dark"] .paper-open-menu {
+    background: #2d3748;
+    border-color: #4a5568;
+    color: #e2e8f0;
+}
+
+[data-theme="dark"] .paper-open-option {
+    color: #e2e8f0;
+}
+
+[data-theme="dark"] .paper-open-option:hover {
+    background-color: #4a5568;
+}
+
+[data-theme="dark-blue"] .paper-open-menu {
+    background: #1a202c;
+    border-color: #2d3748;
+    color: #e2e8f0;
+}
+
+[data-theme="dark-blue"] .paper-open-option {
+    color: #e2e8f0;
+}
+
+[data-theme="dark-blue"] .paper-open-option:hover {
+    background-color: #2d3748;
+}
+
+/* PDF Storage Settings Styles */
+.pdf-storage-settings {
+    margin-bottom: 20px;
+}
+
+.storage-info {
+    margin-bottom: 15px;
+}
+
+.storage-info p {
+    margin-bottom: 10px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.current-folder {
+    padding: 8px 12px;
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.current-folder span {
+    color: var(--accent-color);
+    font-weight: 500;
+}
+
+.storage-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.storage-actions .btn {
+    flex: 1;
+    padding: 8px 16px;
+    font-size: 14px;
+}
+
+.storage-actions .btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.storage-actions .btn-secondary:hover {
+    background: #5a6268;
+}
+
+.storage-actions .btn-secondary:disabled {
+    background: #6c757d;
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.storage-note {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-style: italic;
+}
+
+/* Dark theme support for storage settings */
+[data-theme="dark"] .current-folder {
+    background: #2d3748;
+    border-color: #4a5568;
+    color: #e2e8f0;
+}
+
+[data-theme="dark-blue"] .current-folder {
+    background: #1a202c;
+    border-color: #2d3748;
+    color: #e2e8f0;
 }
 
 /* Responsive Design */

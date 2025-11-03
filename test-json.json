@@ -1,0 +1,56 @@
+{
+  "metadata": {
+    "exportDate": "2024-01-15T10:30:00.000Z",
+    "version": "1.0",
+    "totalPapers": 2,
+    "exportFormat": "Research Paper Tracker JSON"
+  },
+  "papers": [
+    {
+      "id": 1,
+      "title": "Machine Learning in Healthcare",
+      "authors": "Dr. Sarah Wilson, Prof. Michael Chen",
+      "year": "2023",
+      "journal": "Nature Medicine",
+      "keywords": "machine learning, healthcare, AI, medical diagnosis",
+      "status": "read",
+      "priority": "high",
+      "rating": "5",
+      "dateAdded": "2024-01-10",
+      "keyPoints": "Revolutionary approach to early disease detection using ML algorithms",
+      "notes": "Excellent methodology, strong clinical validation",
+      "citation": "Wilson, S., & Chen, M. (2023). Machine Learning in Healthcare. Nature Medicine, 29(3), 123-145.",
+      "doi": "10.1038/s41591-023-01234-5",
+      "chapter": "AI Applications",
+      "pdf": {
+        "hasPDF": true,
+        "source": "indexeddb",
+        "path": "papers/wilson2023ml.pdf",
+        "filename": "wilson2023ml.pdf"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Quantum Computing Fundamentals",
+      "authors": "Dr. Alex Rodriguez",
+      "year": "2023",
+      "journal": "Physical Review Letters",
+      "keywords": "quantum computing, algorithms, quantum mechanics",
+      "status": "reading",
+      "priority": "medium",
+      "rating": "",
+      "dateAdded": "2024-01-12",
+      "keyPoints": "Comprehensive introduction to quantum algorithms",
+      "notes": "Need to finish reading chapter 3",
+      "citation": "Rodriguez, A. (2023). Quantum Computing Fundamentals. Physical Review Letters, 130(15), 150401.",
+      "doi": "10.1103/PhysRevLett.130.150401",
+      "chapter": "Quantum Theory",
+      "pdf": {
+        "hasPDF": false,
+        "source": "none",
+        "path": "",
+        "filename": ""
+      }
+    }
+  ]
+}
