@@ -591,6 +591,9 @@ function renderTable() {
                 </select>
             </td>
             <td><input type="date" data-paper-id="${paper.id}" data-field="dateAdded" value="${escapeHtml(paper.dateAdded)}"></td>
+            <td><textarea data-paper-id="${paper.id}" data-field="keyPoints" placeholder="Key takeaways from the paper...">${escapeHtml(paper.keyPoints || '')}</textarea></td>
+            <td><textarea data-paper-id="${paper.id}" data-field="notes" placeholder="Additional notes...">${escapeHtml(paper.notes || '')}</textarea></td>
+            <td><input type="text" data-paper-id="${paper.id}" data-field="language" value="${escapeHtml(paper.language)}" placeholder="en"></td>
             <td>
                 <div class="citation-container">
                     <div class="citation-display" data-citation-id="${paper.id}" data-citation-text="${escapeHtml(citationData.text)}" title="Click to copy citation">
@@ -599,7 +602,6 @@ function renderTable() {
                     <button class="copy-citation-btn" data-paper-id="${paper.id}" title="Copy citation to clipboard">📋</button>
                 </div>
             </td>
-            <td><input type="text" data-paper-id="${paper.id}" data-field="chapter" value="${escapeHtml(paper.chapter)}" placeholder="Chapter 1, Literature Review, etc."></td>
             <td class="pdf-actions">
                 <div class="pdf-actions-container">
                     ${paper.hasPDF ? 
