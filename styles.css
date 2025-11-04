@@ -988,28 +988,500 @@ textarea {
     color: #e2e8f0;
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
+/* Responsive Design - Mobile First Approach */
+
+/* Tablet and below (1024px and down) */
+@media (max-width: 1024px) {
     body {
         margin: 10px;
     }
-    
+
+    .container {
+        border-radius: 4px;
+    }
+
+    /* Settings button repositioning */
+    .settings-btn {
+        top: 10px;
+        right: 10px;
+        width: 45px;
+        height: 45px;
+        font-size: 18px;
+    }
+
+    /* Header adjustments */
+    .header {
+        padding: 15px;
+    }
+
+    .header h1 {
+        font-size: 24px;
+    }
+
+    .header p {
+        font-size: 13px;
+    }
+
+    /* Controls responsive stacking */
+    .controls {
+        padding: 12px;
+        gap: 8px;
+    }
+
+    .export-group,
+    .import-group,
+    .utility-group {
+        flex-wrap: wrap;
+        width: 100%;
+        border-right: none;
+        padding-right: 0;
+        margin-right: 0;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 8px;
+        margin-bottom: 8px;
+    }
+
+    .utility-group {
+        border-bottom: none;
+        margin-bottom: 0;
+        margin-left: 0;
+    }
+
+    /* Stats wrapping */
+    .stats {
+        gap: 10px;
+    }
+
+    .stat-item {
+        font-size: 12px;
+        padding: 6px 10px;
+    }
+
+    /* Table wrapper with enhanced scrolling */
+    .table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+        min-width: 1600px; /* Reduced from 2400px */
+    }
+
+    /* Paper cards grid adjustment */
+    .papers-grid {
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 15px;
+    }
+}
+
+/* Mobile landscape and below (768px) */
+@media (max-width: 768px) {
+    body {
+        margin: 5px;
+    }
+
+    /* Header mobile optimization */
+    .header {
+        padding: 12px;
+    }
+
+    .header h1 {
+        font-size: 20px;
+        margin: 0;
+    }
+
+    .header p {
+        font-size: 11px;
+        margin: 5px 0 0 0;
+    }
+
+    /* Controls full-width stacking */
     .controls {
         flex-direction: column;
         align-items: stretch;
+        padding: 10px;
     }
-    
+
     .url-input-group {
         min-width: auto;
         flex-direction: column;
+        width: 100%;
     }
-    
+
+    .url-input {
+        margin-bottom: 5px;
+    }
+
+    .btn-url {
+        width: 100%;
+    }
+
+    /* Button groups full width */
+    .export-group,
+    .import-group,
+    .utility-group {
+        justify-content: space-between;
+    }
+
+    .btn {
+        font-size: 13px;
+        padding: 8px 12px;
+    }
+
+    /* Stats responsive */
+    .stats {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .stat-item {
+        width: 100%;
+        text-align: center;
+    }
+
+    /* Smart input hint smaller text */
+    .smart-input-hint {
+        font-size: 11px;
+    }
+
+    /* Table mobile optimization */
+    table {
+        min-width: 1200px; /* Further reduced for mobile */
+        font-size: 12px;
+    }
+
+    th, td {
+        padding: 8px 6px;
+        font-size: 12px;
+    }
+
+    input, select, textarea {
+        font-size: 13px;
+        padding: 6px 8px;
+    }
+
+    textarea {
+        min-height: 60px;
+    }
+
+    /* Table container mobile hint */
+    .table-container::before {
+        content: "→ Swipe to scroll table →";
+        display: block;
+        text-align: center;
+        padding: 8px;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-style: italic;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    /* Paper cards single column on mobile */
     .papers-grid {
         grid-template-columns: 1fr;
+        gap: 12px;
     }
-    
+
+    .paper-card {
+        padding: 15px;
+    }
+
+    .paper-title {
+        font-size: 15px;
+    }
+
+    .paper-authors {
+        font-size: 13px;
+    }
+
+    .paper-year-journal {
+        font-size: 12px;
+    }
+
+    /* Modal adjustments for mobile */
+    .modal {
+        width: 95%;
+        max-width: none;
+        padding: 16px;
+        max-height: 85vh;
+    }
+
+    .modal-title {
+        font-size: 16px;
+    }
+
+    .modal-field label {
+        font-size: 13px;
+    }
+
+    .modal-field input,
+    .modal-field textarea {
+        font-size: 14px;
+    }
+
+    /* Settings modal mobile */
+    .settings-content {
+        width: 95%;
+        max-width: none;
+        padding: 16px;
+        max-height: 85vh;
+    }
+
+    .settings-title {
+        font-size: 18px;
+    }
+
+    .theme-option {
+        padding: 10px;
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .theme-preview {
+        margin: 0 auto 8px auto;
+    }
+
+    .theme-name {
+        font-size: 14px;
+    }
+
+    .theme-description {
+        font-size: 12px;
+    }
+}
+
+/* Mobile portrait (480px and below) */
+@media (max-width: 480px) {
+    body {
+        margin: 0;
+    }
+
+    .container {
+        border-radius: 0;
+    }
+
+    /* Settings button */
+    .settings-btn {
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+        top: 8px;
+        right: 8px;
+    }
+
+    /* Header compact */
+    .header {
+        padding: 10px;
+    }
+
+    .header h1 {
+        font-size: 18px;
+    }
+
+    .header p {
+        font-size: 10px;
+    }
+
+    /* Controls ultra-compact */
+    .controls {
+        padding: 8px;
+    }
+
+    .btn {
+        font-size: 12px;
+        padding: 7px 10px;
+        white-space: nowrap;
+    }
+
+    /* Button groups wrap tightly */
+    .export-group,
+    .import-group {
+        gap: 4px;
+    }
+
+    /* Table even more compact */
     table {
-        min-width: 1200px;
+        min-width: 1000px;
+        font-size: 11px;
+    }
+
+    th, td {
+        padding: 6px 4px;
+        font-size: 11px;
+    }
+
+    input, select, textarea {
+        font-size: 12px;
+        padding: 5px 6px;
+    }
+
+    /* Paper cards very compact */
+    .paper-card {
+        padding: 12px;
+    }
+
+    .paper-title {
+        font-size: 14px;
+    }
+
+    .paper-card-actions {
+        flex-direction: column;
+        gap: 6px;
+        align-items: stretch;
+    }
+
+    .paper-open-btn,
+    .copy-citation-card-btn,
+    .paper-link {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+    }
+
+    /* Modal ultra-compact */
+    .modal,
+    .settings-content {
+        width: 100%;
+        height: 100vh;
+        max-height: 100vh;
+        border-radius: 0;
+        padding: 12px;
+    }
+
+    .modal-actions,
+    .storage-actions {
+        flex-direction: column;
+    }
+
+    .modal-btn {
+        width: 100%;
+    }
+}
+
+/* Landscape phone optimization */
+@media (max-width: 896px) and (orientation: landscape) {
+    .header {
+        padding: 8px;
+    }
+
+    .header h1 {
+        font-size: 16px;
+        display: inline;
+        margin-right: 10px;
+    }
+
+    .header p {
+        display: inline;
+        font-size: 11px;
+    }
+
+    .modal,
+    .settings-content {
+        max-height: 95vh;
+        overflow-y: auto;
+    }
+}
+
+/* Mobile touch improvements - applies to all mobile devices */
+@media (max-width: 1024px) {
+    /* Enhanced touch targets for mobile (minimum 44x44px per iOS guidelines) */
+    .btn,
+    .delete-btn,
+    .pdf-btn,
+    .copy-citation-btn,
+    .copy-citation-card-btn,
+    .paper-open-btn,
+    .paper-link {
+        min-height: 44px;
+        min-width: 44px;
+        touch-action: manipulation; /* Disable double-tap zoom */
+    }
+
+    /* Smooth scrolling for better mobile experience */
+    html {
+        scroll-behavior: smooth;
+    }
+
+    /* Better touch scrolling for table */
+    .table-wrapper {
+        scrollbar-width: thin;
+        scrollbar-color: var(--accent-color) var(--bg-primary);
+    }
+
+    .table-wrapper::-webkit-scrollbar {
+        height: 8px;
+    }
+
+    .table-wrapper::-webkit-scrollbar-track {
+        background: var(--bg-primary);
+    }
+
+    .table-wrapper::-webkit-scrollbar-thumb {
+        background: var(--accent-color);
+        border-radius: 4px;
+    }
+
+    /* Prevent text selection on buttons for better touch UX */
+    button {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Better focus states for mobile */
+    input:focus,
+    select:focus,
+    textarea:focus,
+    button:focus {
+        outline: 2px solid var(--accent-color);
+        outline-offset: 2px;
+    }
+
+    /* Improve dropdown menu touch interaction */
+    .paper-open-menu {
+        min-width: 160px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+
+    .paper-open-option {
+        min-height: 44px;
+        padding: 12px 16px;
+        font-size: 14px;
+    }
+
+    /* Better spacing for paper cards on touch devices */
+    .paper-card {
+        margin-bottom: 4px;
+    }
+
+    /* Improve citation display touch interaction */
+    .citation-display {
+        cursor: pointer;
+        -webkit-user-select: text;
+        user-select: text;
+    }
+
+    /* Better status badges for touch */
+    .status-badge,
+    .priority-badge {
+        font-size: 11px;
+        padding: 5px 10px;
+    }
+}
+
+/* Prevent horizontal scrolling on body */
+body {
+    overflow-x: hidden;
+}
+
+/* Accessibility: Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
     }
 }
 
