@@ -89,27 +89,27 @@ function validateUrl(url) {
 function showSummary() {
     const summaryContainer = document.getElementById('papersSummary');
     if (!summaryContainer) return;
-    
+
     if (papers.length === 0) {
         summaryContainer.className = 'papers-grid empty-grid';
         summaryContainer.innerHTML = '<div class="empty-state">No papers added yet. Add some papers to see them here!</div>';
         return;
     }
-    
+
     // Reset container for grid display
     summaryContainer.className = 'papers-grid';
-    
+
     // Generate summary cards
     const summaryHTML = papers.map(paper => {
         const keywords = paper.keywords ? paper.keywords.split(',').map(k => k.trim()).filter(k => k) : [];
-        const keywordTags = keywords.map(keyword => 
+        const keywordTags = keywords.map(keyword =>
             `<span class="keyword-tag">${escapeHtml(keyword)}</span>`
         ).join('');
-        
+
         const stars = paper.rating ? '★'.repeat(Math.min(parseInt(paper.rating) || 0, 5)) : '';
         const paperUrl = validateUrl(paper.doi);
-        
-        
+
+
         return `
             <div class="paper-card" data-paper-id="${paper.id}">
                 <div class="paper-status-info">
@@ -119,30 +119,30 @@ function showSummary() {
                         ${stars ? `<span class="rating-stars">${escapeHtml(stars)}</span>` : ''}
                     </div>
                 </div>
-                
+
                 <div class="paper-title" data-paper-url="${paperUrl ? escapeHtml(paperUrl) : ''}" title="${paperUrl ? 'Click to open paper' : 'No URL available'}">
                     ${escapeHtml(paper.title || 'Untitled Paper')}
                 </div>
-                
+
                 ${paper.authors ? `<div class="paper-authors">${escapeHtml(paper.authors)}</div>` : ''}
-                
+
                 <div class="paper-year-journal">
                     ${paper.year ? escapeHtml(paper.year) : 'Year not specified'}
                     ${paper.journal ? ` • ${escapeHtml(paper.journal)}` : ''}
                 </div>
-                
+
                 ${keywordTags ? `<div class="paper-keywords">${keywordTags}</div>` : ''}
-                
+
                 ${paper.keyPoints ? `<div class="paper-key-points">
                     <div class="key-points-header">Key Points:</div>
                     <div class="key-points-content">${escapeHtml(paper.keyPoints)}</div>
                 </div>` : ''}
-                
+
                 ${paper.notes ? `<div class="paper-relevance">
                     <div class="relevance-header">Relevance & Notes:</div>
                     <div class="relevance-content">${escapeHtml(paper.notes)}</div>
                 </div>` : ''}
-                
+
                 <div class="paper-card-actions">
                     ${paperUrl || paper.hasPDF ? `
                         <div class="paper-open-dropdown">
@@ -158,41 +158,11 @@ function showSummary() {
             </div>
         `;
     }).join('');
-    
+
     summaryContainer.innerHTML = summaryHTML;
-    
-    // Add safe event delegation for paper title clicks and copy buttons
-    summaryContainer.addEventListener('click', function(event) {
-        const paperTitle = event.target.closest('.paper-title');
-        if (paperTitle) {
-            const url = paperTitle.getAttribute('data-paper-url');
-            if (url) {
-                // Additional validation before opening
-                try {
-                    const urlObj = new URL(url);
-                    if (['http:', 'https:'].includes(urlObj.protocol)) {
-                        window.open(url, '_blank', 'noopener,noreferrer');
-                    }
-                } catch (e) {
-                    console.warn('Invalid URL:', url);
-                }
-            }
-        }
-        
-        // Handle copy citation button clicks
-        if (event.target.classList.contains('copy-citation-card-btn')) {
-            const paperId = parseInt(event.target.getAttribute('data-paper-id'));
-            if (paperId) {
-                copyCitationFromCard(paperId);
-            }
-        }
-        
-        // Note: Dropdown clicks are now handled by dedicated event listeners
-        // attached via attachDropdownEventListeners() function
-    });
-    
-    // Attach event listeners to all dropdowns
-    attachDropdownEventListeners(summaryContainer);
+
+    // Event delegation is now set up once in DOMContentLoaded
+    // No need to re-attach listeners here - they persist and handle dynamically created elements
 }
 
 // Paper management functions
@@ -1958,48 +1928,56 @@ function importJSON(event) {
 function importBibTeX(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
+
     // Validate file type
     if (!file.name.toLowerCase().endsWith('.bib')) {
         alert('Please select a BibTeX file (.bib)');
         return;
     }
-    
+
     // Validate file size (limit to 10MB)
     if (file.size > 10 * 1024 * 1024) {
         alert('File is too large. Please select a file smaller than 10MB');
         return;
     }
-    
+
     const reader = new FileReader();
     reader.onload = async function(e) {
         try {
             const bibtexContent = e.target.result;
-            const papers = parseBibTeX(bibtexContent);
-            
+            const bibtexPapers = parseBibTeX(bibtexContent); // Fixed: renamed to avoid shadowing global papers
+
             let importCount = 0;
             const maxRows = 1000; // Prevent memory issues
-            
-            for (let i = 0; i < Math.min(papers.length, maxRows); i++) {
-                const bibtexPaper = papers[i];
-                
+
+            for (let i = 0; i < Math.min(bibtexPapers.length, maxRows); i++) {
+                const bibtexPaper = bibtexPapers[i];
+
                 // Create paper object from BibTeX entry
                 const paper = {
                     id: nextId++,
+                    itemType: bibtexPaper.itemType || 'article', // Map entry type
                     title: bibtexPaper.title || '',
                     authors: bibtexPaper.author || '',
                     year: bibtexPaper.year || '',
-                    journal: bibtexPaper.journal || '',
+                    journal: bibtexPaper.journal || bibtexPaper.booktitle || '', // Conference papers use booktitle
+                    volume: bibtexPaper.volume || '', // Fixed: added volume mapping
+                    issue: bibtexPaper.issue || bibtexPaper.number || '', // Fixed: added issue/number mapping
+                    pages: bibtexPaper.pages || '', // Fixed: added pages mapping
+                    issn: bibtexPaper.issn || '', // Fixed: added ISSN mapping
                     keywords: bibtexPaper.keywords || '',
+                    abstract: bibtexPaper.abstract || '', // Fixed: added abstract mapping
                     status: 'to-read', // Default status
                     priority: 'medium', // Default priority
                     rating: '',
                     dateAdded: new Date().toISOString().split('T')[0],
                     keyPoints: '',
                     notes: bibtexPaper.note || '',
+                    relevance: '', // Empty by default
                     citation: '', // Will be generated
-                    doi: bibtexPaper.doi || '',
+                    doi: bibtexPaper.doi || bibtexPaper.url || '',
                     chapter: bibtexPaper.chapter || '',
+                    language: 'en', // Default language
                     hasPDF: false,
                     pdfSource: 'none',
                     pdfPath: '',
@@ -2007,25 +1985,25 @@ function importBibTeX(event) {
                     pdfBlobUrl: null,
                     pdfHandle: null
                 };
-                
-                // Generate citation
-                paper.citation = generateCitation(paper);
-                
-                papers.push(paper);
+
+                // Generate citation using correct function name
+                paper.citation = formatAPA7Citation(paper); // Fixed: use formatAPA7Citation instead of generateCitation
+
+                papers.push(paper); // Fixed: now pushes to global papers array
                 importCount++;
             }
-            
+
             if (importCount > 0) {
                 renderTable();
                 updateStats();
                 showSummary();
                 storage.save();
-                
+
                 alert(`Successfully imported ${importCount} papers from BibTeX`);
             } else {
                 alert('No valid papers found in the BibTeX file');
             }
-            
+
             // Clear the file input
             event.target.value = '';
         } catch (error) {
@@ -2033,7 +2011,7 @@ function importBibTeX(event) {
             alert('Error importing BibTeX file. Please check the file format.');
         }
     };
-    
+
     reader.readAsText(file);
 }
 
@@ -2041,23 +2019,53 @@ function importBibTeX(event) {
 function parseBibTeX(content) {
     const papers = [];
     const entries = content.split('@');
-    
+
     for (let entry of entries) {
         if (!entry.trim()) continue;
-        
+
         const lines = entry.split('\n');
         const paper = {};
-        
+
+        // Extract entry type from first line (e.g., @article{, @inproceedings{, @book{)
+        const firstLine = lines[0].trim();
+        const typeMatch = firstLine.match(/^(\w+)\s*\{/);
+        if (typeMatch) {
+            const entryType = typeMatch[1].toLowerCase();
+            // Map BibTeX entry types to our itemType field
+            switch (entryType) {
+                case 'article':
+                    paper.itemType = 'article';
+                    break;
+                case 'inproceedings':
+                case 'conference':
+                    paper.itemType = 'inproceedings';
+                    break;
+                case 'book':
+                    paper.itemType = 'book';
+                    break;
+                case 'techreport':
+                case 'report':
+                    paper.itemType = 'techreport';
+                    break;
+                case 'phdthesis':
+                case 'mastersthesis':
+                    paper.itemType = 'phdthesis';
+                    break;
+                default:
+                    paper.itemType = 'misc';
+            }
+        }
+
         for (let line of lines) {
             line = line.trim();
             if (!line || line.startsWith('%') || line === '{' || line === '}') continue;
-            
+
             // Extract field name and value
             const match = line.match(/^(\w+)\s*=\s*\{([^}]*)\},?\s*$/);
             if (match) {
                 const fieldName = match[1].toLowerCase();
                 const fieldValue = match[2].trim();
-                
+
                 // Map BibTeX fields to our paper fields
                 switch (fieldName) {
                     case 'title':
@@ -2072,8 +2080,31 @@ function parseBibTeX(content) {
                     case 'journal':
                         paper.journal = fieldValue;
                         break;
-                    case 'doi':
+                    case 'booktitle': // Fixed: added booktitle for conference papers
+                        paper.booktitle = fieldValue;
+                        break;
+                    case 'volume': // Fixed: added volume
+                        paper.volume = fieldValue;
+                        break;
+                    case 'number': // Fixed: added number (issue)
+                    case 'issue':
+                        paper.number = fieldValue;
+                        paper.issue = fieldValue;
+                        break;
+                    case 'pages': // Fixed: added pages
+                        paper.pages = fieldValue;
+                        break;
+                    case 'doi': // Fixed: added DOI
                         paper.doi = fieldValue;
+                        break;
+                    case 'issn': // Fixed: added ISSN
+                        paper.issn = fieldValue;
+                        break;
+                    case 'isbn': // Fixed: added ISBN for books
+                        paper.issn = fieldValue; // Store in issn field
+                        break;
+                    case 'abstract': // Fixed: added abstract
+                        paper.abstract = fieldValue;
                         break;
                     case 'keywords':
                         paper.keywords = fieldValue;
@@ -2084,18 +2115,33 @@ function parseBibTeX(content) {
                     case 'chapter':
                         paper.chapter = fieldValue;
                         break;
+                    case 'publisher': // Fixed: added publisher (stored in notes)
+                        if (!paper.note) {
+                            paper.note = `Publisher: ${fieldValue}`;
+                        } else {
+                            paper.note += ` | Publisher: ${fieldValue}`;
+                        }
+                        break;
+                    case 'address': // Fixed: added address (stored in notes)
+                        if (!paper.note) {
+                            paper.note = `Address: ${fieldValue}`;
+                        } else {
+                            paper.note += ` | Address: ${fieldValue}`;
+                        }
+                        break;
                     case 'url':
                         if (!paper.doi) paper.doi = fieldValue;
+                        paper.url = fieldValue;
                         break;
                 }
             }
         }
-        
+
         if (paper.title) {
             papers.push(paper);
         }
     }
-    
+
     return papers;
 }
 
@@ -3003,13 +3049,16 @@ function initializeEventListeners() {
     
     // Table event delegation
     setupTableEventDelegation();
-    
+
+    // Summary container event delegation (Fixed: prevents memory leaks)
+    setupSummaryEventDelegation();
+
     // Table collapse functionality
     setupTableCollapse();
-    
+
     // Settings functionality
     setupSettings();
-    
+
     // Load saved theme
     loadTheme();
 }
@@ -3076,6 +3125,75 @@ function setupTableEventDelegation() {
         
         if (paperId && field) {
             updatePaper(paperId, field, e.target.value);
+        }
+    });
+}
+
+// Setup event delegation for summary container interactions (Fixed: prevents memory leaks)
+function setupSummaryEventDelegation() {
+    const summaryContainer = document.getElementById('papersSummary');
+    if (!summaryContainer) return;
+
+    // Single click handler for all summary interactions using event delegation
+    summaryContainer.addEventListener('click', function(event) {
+        const target = event.target;
+
+        // Handle paper title clicks to open online URL
+        const paperTitle = target.closest('.paper-title');
+        if (paperTitle) {
+            const url = paperTitle.getAttribute('data-paper-url');
+            if (url) {
+                try {
+                    const urlObj = new URL(url);
+                    if (['http:', 'https:'].includes(urlObj.protocol)) {
+                        window.open(url, '_blank', 'noopener,noreferrer');
+                    }
+                } catch (e) {
+                    console.warn('Invalid URL:', url);
+                }
+            }
+            return;
+        }
+
+        // Handle copy citation button clicks
+        if (target.classList.contains('copy-citation-card-btn')) {
+            const paperId = parseInt(target.getAttribute('data-paper-id'));
+            if (paperId) {
+                copyCitationFromCard(paperId);
+            }
+            return;
+        }
+
+        // Handle dropdown toggle button clicks
+        if (target.classList.contains('paper-open-btn')) {
+            event.stopPropagation();
+            const paperId = parseInt(target.getAttribute('data-paper-id'));
+            if (paperId) {
+                togglePaperDropdown(paperId);
+            }
+            return;
+        }
+
+        // Handle dropdown option clicks (open online or PDF)
+        if (target.classList.contains('paper-open-option')) {
+            event.stopPropagation();
+            const paperId = parseInt(target.getAttribute('data-paper-id'));
+            const action = target.getAttribute('data-action');
+            if (paperId && action) {
+                handlePaperOpenAction(paperId, action);
+            }
+            return;
+        }
+    });
+
+    // Global click handler to close dropdowns when clicking outside
+    document.addEventListener('click', function(event) {
+        // Don't close if clicking inside a dropdown
+        if (!event.target.closest('.paper-open-dropdown')) {
+            const allDropdowns = document.querySelectorAll('.paper-open-menu');
+            allDropdowns.forEach(dropdown => {
+                dropdown.classList.remove('show');
+            });
         }
     });
 }
@@ -3317,24 +3435,9 @@ function loadTheme() {
     }
 }
 
-// Attach event listeners to dropdown elements
-function attachDropdownEventListeners(container) {
-    // Handle paper open dropdown clicks
-    const dropdownButtons = container.querySelectorAll('.paper-open-btn');
-    dropdownButtons.forEach(button => {
-        // Remove existing listeners to prevent duplicates
-        button.removeEventListener('click', handleDropdownClick);
-        button.addEventListener('click', handleDropdownClick);
-    });
-    
-    // Handle paper open option clicks
-    const dropdownOptions = container.querySelectorAll('.paper-open-option');
-    dropdownOptions.forEach(option => {
-        // Remove existing listeners to prevent duplicates
-        option.removeEventListener('click', handleDropdownOptionClick);
-        option.addEventListener('click', handleDropdownOptionClick);
-    });
-}
+// REMOVED: attachDropdownEventListeners() - replaced with event delegation
+// Event listeners are now attached once to parent containers in DOMContentLoaded
+// This prevents memory leaks from repeatedly adding/removing listeners
 
 // Handle dropdown button clicks
 function handleDropdownClick(event) {
@@ -3404,15 +3507,9 @@ function handlePaperOpenAction(paperId, action) {
     }
 }
 
-// Close dropdowns when clicking outside
-document.addEventListener('click', function(event) {
-    if (!event.target.closest('.paper-open-dropdown')) {
-        const allDropdowns = document.querySelectorAll('.paper-open-menu');
-        allDropdowns.forEach(dropdown => {
-            dropdown.classList.remove('show');
-        });
-    }
-});
+// REMOVED: Duplicate global click handler for dropdowns
+// This functionality is now handled in setupSummaryEventDelegation()
+// to prevent duplicate event listeners and memory leaks
 
 // Cleanup blob URLs to prevent memory leaks
 function cleanupBlobUrls() {
