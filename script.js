@@ -24,6 +24,21 @@ let lastSaveTime = 0;
 const SAVE_COOLDOWN = 1000; // 1 second between saves
 let pendingSave = false;
 
+// Debounce utility for input handling
+const INPUT_DEBOUNCE_DELAY = 300; // 300ms delay for input debouncing
+let debounceTimers = new Map(); // Store timers per paper+field
+
+function debounce(key, fn, delay) {
+    if (debounceTimers.has(key)) {
+        clearTimeout(debounceTimers.get(key));
+    }
+    const timer = setTimeout(() => {
+        fn();
+        debounceTimers.delete(key);
+    }, delay);
+    debounceTimers.set(key, timer);
+}
+
 // Global utility functions
 function escapeHtml(text) {
     if (!text) return '';
@@ -35,54 +50,80 @@ function escapeHtml(text) {
 // Validate URLs to prevent XSS and data exfiltration
 function validateUrl(url) {
     if (!url) return null;
+
     try {
         const urlObj = new URL(url);
+
         // Only allow http and https protocols
-        if (['http:', 'https:'].includes(urlObj.protocol)) {
-            // Additional safety: check for dangerous patterns
-            const dangerousPatterns = [
-                /javascript:/i,
-                /data:/i,
-                /vbscript:/i,
-                /onload/i,
-                /onerror/i,
-                /onclick/i,
-                /file:/i,
-                /ftp:/i,
-                /blob:/i,
-                /about:/i
-            ];
-            
-            const urlString = urlObj.toString().toLowerCase();
-            if (dangerousPatterns.some(pattern => pattern.test(urlString))) {
-                return null;
-            }
-            
-            // Check for suspicious domains that might be used for data exfiltration
-            const suspiciousDomains = [
-                'localhost',
-                '127.0.0.1',
-                '0.0.0.0',
-                'internal',
-                'local'
-            ];
-            
-            const hostname = urlObj.hostname.toLowerCase();
-            if (suspiciousDomains.some(domain => hostname.includes(domain))) {
-                return null;
-            }
-            
-            // Check for very long URLs (potential DoS)
-            if (urlString.length > 2000) {
-                return null;
-            }
-            
-            return url;
+        if (!['http:', 'https:'].includes(urlObj.protocol)) {
+            return null;
         }
+
+        // Check for very long URLs first (potential DoS)
+        const urlString = urlObj.toString();
+        if (urlString.length > 2000) {
+            return null;
+        }
+
+        // Additional safety: check for dangerous patterns
+        const dangerousPatterns = [
+            /javascript:/i,
+            /data:/i,
+            /vbscript:/i,
+            /onload/i,
+            /onerror/i,
+            /onclick/i,
+            /file:/i,
+            /ftp:/i,
+            /blob:/i,
+            /about:/i
+        ];
+
+        const urlLower = urlString.toLowerCase();
+        if (dangerousPatterns.some(pattern => pattern.test(urlLower))) {
+            return null;
+        }
+
+        // Check for suspicious domains that might be used for data exfiltration
+        const hostname = urlObj.hostname.toLowerCase();
+        const suspiciousDomains = [
+            'localhost',
+            '127.0.0.1',
+            '0.0.0.0',
+            'internal',
+            'local'
+        ];
+
+        if (suspiciousDomains.some(domain => hostname.includes(domain))) {
+            return null;
+        }
+
+        // Detect punycode (internationalized domain names) for security awareness
+        // Punycode domains start with 'xn--'
+        if (hostname.includes('xn--')) {
+            // Log warning but still allow (user should be aware)
+            console.warn('Punycode domain detected:', hostname);
+        }
+
+        // Check for IP addresses in hostname (potential phishing)
+        const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+        if (ipPattern.test(hostname)) {
+            // Private/local IPs already blocked above
+            // Public IPs are allowed but logged for awareness
+            console.warn('IP address used instead of domain name:', hostname);
+        }
+
+        // Check for excessive subdomains (potential phishing)
+        const subdomainParts = hostname.split('.');
+        if (subdomainParts.length > 5) {
+            console.warn('Excessive subdomains detected:', hostname);
+        }
+
+        return url;
     } catch (e) {
-        // Invalid URL
+        // Invalid URL format
+        return null;
     }
-    return null;
 }
 
 // Summary function
@@ -589,95 +630,82 @@ function renderTable() {
     });
 }
 
-// Copy citation to clipboard
-function copyCitation(id) {
-    const citationDiv = document.querySelector(`div[data-citation-id="${id}"]`);
-    if (!citationDiv) return;
-    
-    const citationText = citationDiv.getAttribute('data-citation-text');
-    if (!citationText) {
-        alert('No citation available to copy');
+// Unified copy to clipboard utility
+async function copyToClipboard(text, id, buttonSelector) {
+    if (!text) {
+        alert('No text available to copy');
         return;
     }
-    
-    // Try to use the modern clipboard API first
-    if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(citationText).then(() => {
-            showCopyFeedback(id);
-        }).catch(() => {
-            // Fallback to legacy method
-            fallbackCopy(citationText, id);
-        });
-    } else {
-        // Fallback to legacy method
-        fallbackCopy(citationText, id);
-    }
-}
 
-function fallbackCopy(text, id) {
-    // Create a temporary textarea
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.className = 'temp-textarea';
-    document.body.appendChild(textarea);
-    textarea.select();
-    textarea.setSelectionRange(0, 99999); // For mobile devices
-    
     try {
         // Try modern clipboard API first
         if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(text).then(() => {
-        showCopyFeedback(id);
-            }).catch(() => {
-                // Fallback to execCommand only if clipboard API fails
-                try {
-                    const successful = document.execCommand('copy');
-                    if (successful) {
-                        showCopyFeedback(id);
-                    } else {
-                        throw new Error('Copy command failed');
-                    }
-                } catch (execErr) {
-                    console.warn('Copy failed:', execErr);
-                    const copyText = prompt('Copy failed. Please copy this text manually:', text);
-                    if (copyText !== null) {
-                        showCopyFeedback(id);
-                    }
-                }
-            });
+            await navigator.clipboard.writeText(text);
+            showCopyFeedback(id, buttonSelector);
         } else {
-            // Fallback to execCommand for older browsers
-            const successful = document.execCommand('copy');
-            if (successful) {
-                showCopyFeedback(id);
-            } else {
-                throw new Error('Copy command failed');
+            // Fallback to execCommand method
+            fallbackCopyToClipboard(text, id, buttonSelector);
+        }
+    } catch (err) {
+        // Fallback if clipboard API fails
+        fallbackCopyToClipboard(text, id, buttonSelector);
+    }
+}
+
+function fallbackCopyToClipboard(text, id, buttonSelector) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.className = 'temp-textarea';
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, 99999);
+
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            showCopyFeedback(id, buttonSelector);
+        } else {
+            // Last resort: manual copy
+            const manualCopy = prompt('Automatic copy failed. Please copy this text manually:', text);
+            if (manualCopy !== null) {
+                showCopyFeedback(id, buttonSelector);
             }
         }
     } catch (err) {
         console.warn('Copy failed:', err);
-        // Show user-friendly message with manual copy option
-        const copyText = prompt('Copy failed. Please copy this text manually:', text);
-        if (copyText !== null) {
-            showCopyFeedback(id);
+        const manualCopy = prompt('Copy failed. Please copy this text manually:', text);
+        if (manualCopy !== null) {
+            showCopyFeedback(id, buttonSelector);
         }
+    } finally {
+        document.body.removeChild(textarea);
     }
-    
-    document.body.removeChild(textarea);
 }
 
-function showCopyFeedback(id) {
-    const button = document.querySelector(`button[data-paper-id="${id}"].copy-citation-btn`);
+function showCopyFeedback(id, buttonSelector) {
+    const button = document.querySelector(buttonSelector);
     if (button) {
         const originalText = button.innerHTML;
-        button.innerHTML = '✅';
+        const successText = buttonSelector.includes('card') ? '✅ Copied!' : '✅';
+        button.innerHTML = successText;
         button.classList.add('copy-success');
-        
+
         setTimeout(() => {
             button.innerHTML = originalText;
             button.classList.remove('copy-success');
         }, 2000);
     }
+}
+
+// Copy citation from table
+function copyCitation(id) {
+    const citationDiv = document.querySelector(`div[data-citation-id="${id}"]`);
+    if (!citationDiv) return;
+
+    const citationText = citationDiv.getAttribute('data-citation-text');
+    copyToClipboard(citationText, id, `button[data-paper-id="${id}"].copy-citation-btn`);
 }
 
 // Papers Folder Management Functions
@@ -1130,7 +1158,7 @@ function copyCitationFromCard(id) {
         alert('Paper not found');
         return;
     }
-    
+
     // If no citation exists, try to generate one
     if (!paper.citation) {
         const citationData = formatAPA7CitationHTML(paper);
@@ -1141,97 +1169,24 @@ function copyCitationFromCard(id) {
             return;
         }
     }
-    
-    // Try to use the modern clipboard API first
-    if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(paper.citation).then(() => {
-            showCopyFeedbackCard(id);
-        }).catch(() => {
-            // Fallback to legacy method
-            fallbackCopyCard(paper.citation, id);
-        });
-    } else {
-        // Fallback to legacy method
-        fallbackCopyCard(paper.citation, id);
-    }
-}
 
-function fallbackCopyCard(text, id) {
-    // Create a temporary textarea
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.className = 'temp-textarea';
-    document.body.appendChild(textarea);
-    textarea.select();
-    textarea.setSelectionRange(0, 99999); // For mobile devices
-    
-    try {
-        // Try modern clipboard API first
-        if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(text).then(() => {
-        showCopyFeedbackCard(id);
-            }).catch(() => {
-                // Fallback to execCommand only if clipboard API fails
-                try {
-                    const successful = document.execCommand('copy');
-                    if (successful) {
-                        showCopyFeedbackCard(id);
-                    } else {
-                        throw new Error('Copy command failed');
-                    }
-                } catch (execErr) {
-                    console.warn('Copy failed:', execErr);
-                    const copyText = prompt('Copy failed. Please copy this text manually:', text);
-                    if (copyText !== null) {
-                        showCopyFeedbackCard(id);
-                    }
-                }
-            });
-        } else {
-            // Fallback to execCommand for older browsers
-            const successful = document.execCommand('copy');
-            if (successful) {
-                showCopyFeedbackCard(id);
-            } else {
-                throw new Error('Copy command failed');
-            }
-        }
-    } catch (err) {
-        console.warn('Copy failed:', err);
-        // Show user-friendly message with manual copy option
-        const copyText = prompt('Copy failed. Please copy this text manually:', text);
-        if (copyText !== null) {
-            showCopyFeedbackCard(id);
-        }
-    }
-    
-    document.body.removeChild(textarea);
-}
-
-function showCopyFeedbackCard(id) {
-    const button = document.querySelector(`button[data-paper-id="${id}"].copy-citation-card-btn`);
-    if (button) {
-        const originalText = button.innerHTML;
-        button.innerHTML = '✅ Copied!';
-        button.classList.add('copy-success');
-        
-        setTimeout(() => {
-            button.innerHTML = originalText;
-            button.classList.remove('copy-success');
-        }, 2000);
-    }
+    copyToClipboard(paper.citation, id, `button[data-paper-id="${id}"].copy-citation-card-btn`);
 }
 
 function updateStats() {
-    const total = papers.length;
-    const read = papers.filter(p => p.status === 'read').length;
-    const reading = papers.filter(p => p.status === 'reading').length;
-    const toRead = papers.filter(p => p.status === 'to-read').length;
+    // Single pass through papers array for efficiency
+    const stats = papers.reduce((acc, paper) => {
+        acc.total++;
+        if (paper.status === 'read') acc.read++;
+        else if (paper.status === 'reading') acc.reading++;
+        else if (paper.status === 'to-read') acc.toRead++;
+        return acc;
+    }, { total: 0, read: 0, reading: 0, toRead: 0 });
 
-    document.getElementById('totalCount').textContent = total;
-    document.getElementById('readCount').textContent = read;
-    document.getElementById('readingCount').textContent = reading;
-    document.getElementById('toReadCount').textContent = toRead;
+    document.getElementById('totalCount').textContent = stats.total;
+    document.getElementById('readCount').textContent = stats.read;
+    document.getElementById('readingCount').textContent = stats.reading;
+    document.getElementById('toReadCount').textContent = stats.toRead;
 }
 
 // IndexedDB helper functions
@@ -1504,16 +1459,20 @@ function exportToJSON() {
 
 // Export to BibTeX format
 function exportToBibTeX() {
-    let bibtexContent = `% Research Paper Tracker - BibTeX Export\n`;
-    bibtexContent += `% Generated on: ${new Date().toISOString().split('T')[0]}\n`;
-    bibtexContent += `% Total papers: ${papers.length}\n\n`;
+    // Use array for efficient string building (O(n) instead of O(n²))
+    const lines = [
+        `% Research Paper Tracker - BibTeX Export`,
+        `% Generated on: ${new Date().toISOString().split('T')[0]}`,
+        `% Total papers: ${papers.length}`,
+        ''
+    ];
 
     papers.forEach(paper => {
         if (!paper.title) return; // Skip papers without titles
-        
+
         // Generate BibTeX key from title and year
         const bibtexKey = generateBibTeXKey(paper);
-        
+
         // Use the itemType field to determine entry type
         let entryType = '@misc'; // Default
         if (paper.itemType) {
@@ -1523,79 +1482,85 @@ function exportToBibTeX() {
         } else if (paper.chapter) {
             entryType = '@inbook';
         }
-        
-        bibtexContent += `${entryType}{${bibtexKey},\n`;
-        bibtexContent += `  title = {${escapeBibTeX(paper.title)}},\n`;
-        
+
+        const fields = [`${entryType}{${bibtexKey},`];
+        fields.push(`  title = {${escapeBibTeX(paper.title)}},`);
+
         if (paper.authors) {
-            bibtexContent += `  author = {${escapeBibTeX(paper.authors)}},\n`;
+            fields.push(`  author = {${escapeBibTeX(paper.authors)}},`);
         }
-        
+
         if (paper.year) {
-            bibtexContent += `  year = {${paper.year}},\n`;
+            fields.push(`  year = {${paper.year}},`);
         }
-        
+
         if (paper.journal) {
-            bibtexContent += `  journal = {${escapeBibTeX(paper.journal)}},\n`;
+            fields.push(`  journal = {${escapeBibTeX(paper.journal)}},`);
         }
-        
+
         if (paper.volume) {
-            bibtexContent += `  volume = {${paper.volume}},\n`;
+            fields.push(`  volume = {${paper.volume}},`);
         }
-        
+
         if (paper.issue) {
-            bibtexContent += `  number = {${paper.issue}},\n`;
+            fields.push(`  number = {${paper.issue}},`);
         }
-        
+
         if (paper.pages) {
-            bibtexContent += `  pages = {${paper.pages}},\n`;
+            fields.push(`  pages = {${paper.pages}},`);
         }
-        
+
         if (paper.doi) {
-            bibtexContent += `  doi = {${paper.doi}},\n`;
+            fields.push(`  doi = {${paper.doi}},`);
         }
-        
+
         if (paper.url) {
-            bibtexContent += `  url = {${paper.url}},\n`;
+            fields.push(`  url = {${paper.url}},`);
         }
-        
+
         if (paper.issn) {
-            bibtexContent += `  issn = {${paper.issn}},\n`;
+            fields.push(`  issn = {${paper.issn}},`);
         }
-        
+
         if (paper.language && paper.language !== 'en') {
-            bibtexContent += `  language = {${paper.language}},\n`;
+            fields.push(`  language = {${paper.language}},`);
         }
-        
+
         if (paper.keywords) {
-            bibtexContent += `  keywords = {${escapeBibTeX(paper.keywords)}},\n`;
+            fields.push(`  keywords = {${escapeBibTeX(paper.keywords)}},`);
         }
-        
+
         // Add abstract if available
         if (paper.abstract) {
-            bibtexContent += `  abstract = {${escapeBibTeX(paper.abstract)}},\n`;
+            fields.push(`  abstract = {${escapeBibTeX(paper.abstract)}},`);
         }
-        
+
         // Add custom fields for our tracker
-        let noteFields = [];
+        const noteFields = [];
         if (paper.status) noteFields.push(`Status: ${paper.status}`);
         if (paper.priority) noteFields.push(`Priority: ${paper.priority}`);
         if (paper.rating) noteFields.push(`Rating: ${paper.rating}/5`);
         if (paper.relevance) noteFields.push(`Relevance: ${escapeBibTeX(paper.relevance)}`);
-        
+
         if (noteFields.length > 0) {
-            bibtexContent += `  note = {${noteFields.join(', ')}},\n`;
+            fields.push(`  note = {${noteFields.join(', ')}},`);
         }
-        
+
         if (paper.chapter) {
-            bibtexContent += `  chapter = {${escapeBibTeX(paper.chapter)}},\n`;
+            fields.push(`  chapter = {${escapeBibTeX(paper.chapter)}},`);
         }
-        
-        // Remove trailing comma and close entry
-        bibtexContent = bibtexContent.replace(/,\n$/, '\n');
-        bibtexContent += `}\n\n`;
+
+        // Remove trailing comma from last field
+        const lastField = fields[fields.length - 1];
+        fields[fields.length - 1] = lastField.replace(/,$/, '');
+
+        fields.push('}');
+        fields.push('');
+
+        lines.push(...fields);
     });
 
+    const bibtexContent = lines.join('\n');
     const blob = new Blob([bibtexContent], { type: 'text/plain;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -2333,29 +2298,73 @@ Please analyze this and return the information in this exact JSON format:
 
 Please ensure the JSON is properly formatted and fill in as much information as possible. If you cannot find certain fields, use empty strings but keep the JSON structure intact.`;
 
+    // Create modal using safer DOM methods instead of innerHTML
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
-    modal.innerHTML = `
-        <div class="modal">
-            <div class="modal-header">
-                <h3 class="modal-title">📋 Copy This Prompt to Your AI Assistant</h3>
-                <button class="modal-close" id="ai-close-btn">&times;</button>
-            </div>
-            <div class="modal-content">
-                <p class="ai-instructions">
-                    Copy the prompt below, paste it into your AI assistant (Claude, ChatGPT, Gemini, Copilot, etc.), then copy the JSON response back into the input field.
-                </p>
-                <div class="modal-field">
-                    <textarea id="ai-prompt" readonly class="ai-prompt-textarea">${prompt}</textarea>
-                </div>
-            </div>
-            <div class="modal-actions">
-                <button class="modal-btn modal-btn-secondary" id="ai-cancel-btn">Close</button>
-                <button class="modal-btn modal-btn-primary" id="ai-copy-btn">📋 Copy Prompt</button>
-            </div>
-        </div>
-    `;
-    
+
+    const modalDialog = document.createElement('div');
+    modalDialog.className = 'modal';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'modal-header';
+
+    const title = document.createElement('h3');
+    title.className = 'modal-title';
+    title.textContent = '📋 Copy This Prompt to Your AI Assistant';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'modal-close';
+    closeBtn.id = 'ai-close-btn';
+    closeBtn.innerHTML = '&times;'; // Safe: only HTML entity
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    // Content
+    const content = document.createElement('div');
+    content.className = 'modal-content';
+
+    const instructions = document.createElement('p');
+    instructions.className = 'ai-instructions';
+    instructions.textContent = 'Copy the prompt below, paste it into your AI assistant (Claude, ChatGPT, Gemini, Copilot, etc.), then copy the JSON response back into the input field.';
+
+    const fieldDiv = document.createElement('div');
+    fieldDiv.className = 'modal-field';
+
+    const textarea = document.createElement('textarea');
+    textarea.id = 'ai-prompt';
+    textarea.className = 'ai-prompt-textarea';
+    textarea.readOnly = true;
+    textarea.value = prompt; // Use value instead of textContent for textarea
+
+    fieldDiv.appendChild(textarea);
+    content.appendChild(instructions);
+    content.appendChild(fieldDiv);
+
+    // Actions
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'modal-btn modal-btn-secondary';
+    cancelBtn.id = 'ai-cancel-btn';
+    cancelBtn.textContent = 'Close';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'modal-btn modal-btn-primary';
+    copyBtn.id = 'ai-copy-btn';
+    copyBtn.textContent = '📋 Copy Prompt';
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(copyBtn);
+
+    // Assemble modal
+    modalDialog.appendChild(header);
+    modalDialog.appendChild(content);
+    modalDialog.appendChild(actions);
+    modal.appendChild(modalDialog);
+
     document.body.appendChild(modal);
     
     // Add event listeners for modal buttons
@@ -3108,13 +3117,17 @@ function setupTableEventDelegation() {
         }
     });
     
-    // Handle input changes
+    // Handle input changes with debouncing to prevent excessive updates
     tableBody.addEventListener('input', function(e) {
         const paperId = parseInt(e.target.getAttribute('data-paper-id'));
         const field = e.target.getAttribute('data-field');
-        
+
         if (paperId && field) {
-            updatePaper(paperId, field, e.target.value);
+            const value = e.target.value;
+            const debounceKey = `${paperId}-${field}`;
+            debounce(debounceKey, () => {
+                updatePaper(paperId, field, value);
+            }, INPUT_DEBOUNCE_DELAY);
         }
     });
     

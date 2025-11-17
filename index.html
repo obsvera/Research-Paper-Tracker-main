@@ -12,7 +12,7 @@
 </head>
 <body>
     <!-- Settings Icon -->
-    <button id="settingsBtn" class="settings-btn" title="Settings">
+    <button id="settingsBtn" class="settings-btn" title="Settings" aria-label="Open settings menu">
         ⚙️
     </button>
     
@@ -23,12 +23,12 @@
         </div>
         
         <div class="controls">
-            <button class="btn" id="addRowBtn">+ Add Paper Manually</button>
+            <button class="btn" id="addRowBtn" aria-label="Add a new paper manually to the tracker">+ Add Paper Manually</button>
             <div class="url-input-group">
-                <input type="text" id="extractedData" placeholder="Enter paper title, URL, DOI, or partial citation..." class="url-input">
-                <button class="btn btn-url" id="dataBtn">+ Add</button>
+                <input type="text" id="extractedData" placeholder="Enter paper title, URL, DOI, or partial citation..." class="url-input" aria-label="Enter paper information">
+                <button class="btn btn-url" id="dataBtn" aria-label="Add paper from entered information">+ Add</button>
             </div>
-            <button class="btn btn-summary" id="showSummaryBtn">📄 Show Summary</button>
+            <button class="btn btn-summary" id="showSummaryBtn" aria-label="Show summary view of all papers">📄 Show Summary</button>
             <div class="smart-input-hint">
                 💡 <strong>Smart Input:</strong> Paste paper titles, URLs, DOIs, or partial citations - any AI assistant can automatically extract the details!
             </div>
@@ -36,9 +36,9 @@
         
         <div class="controls">
             <div class="export-group">
-                <button class="btn btn-export" id="exportBtn">📥 Export CSV</button>
-                <button class="btn btn-export" id="exportJSONBtn">📄 Export JSON</button>
-                <button class="btn btn-export" id="exportBibTeXBtn">📚 Export BibTeX</button>
+                <button class="btn btn-export" id="exportBtn" aria-label="Export all papers to CSV format">📥 Export CSV</button>
+                <button class="btn btn-export" id="exportJSONBtn" aria-label="Export all papers to JSON format">📄 Export JSON</button>
+                <button class="btn btn-export" id="exportBibTeXBtn" aria-label="Export all papers to BibTeX format">📚 Export BibTeX</button>
             </div>
             <div class="import-group">
                 <input type="file" id="csvImport" accept=".csv" class="hidden-file-input" aria-label="Import CSV file">
@@ -49,7 +49,7 @@
                 <button class="btn" id="importBibTeXBtn" aria-label="Import papers from BibTeX file">📚 Import BibTeX</button>
             </div>
             <div class="utility-group">
-                <button class="btn" id="clearDataBtn">🗑️ Clear All</button>
+                <button class="btn" id="clearDataBtn" aria-label="Clear all papers from tracker">🗑️ Clear All</button>
                 <button class="btn btn-secondary" id="csvHelpBtn" aria-label="Show import/export help">❓ Help</button>
             </div>
         </div>
@@ -66,8 +66,8 @@
         <div class="table-container">
             <div class="table-header-with-toggle">
                 <h3>Papers Table</h3>
-                <button id="tableToggleBtn" class="table-toggle-btn" title="Toggle table visibility">
-                    <span class="toggle-icon">▼</span>
+                <button id="tableToggleBtn" class="table-toggle-btn" title="Toggle table visibility" aria-label="Expand or collapse papers table">
+                    <span class="toggle-icon" aria-hidden="true">▼</span>
                 </button>
             </div>
             <div id="tableWrapper" class="table-wrapper collapsed">

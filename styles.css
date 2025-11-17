@@ -423,14 +423,38 @@ textarea {
     line-height: 1.4;
 }
 
-/* Status and Priority Row Colors */
-.priority-high { background: var(--priority-high-bg, #ffebee); }
-.priority-medium { background: var(--priority-medium-bg, #fff3e0); }
-.priority-low { background: var(--priority-low-bg, #e8f5e8); }
-.status-read { background: var(--status-read-bg, #e8f5e8); }
-.status-reading { background: var(--status-reading-bg, #e3f2fd); }
-.status-to-read { background: var(--status-to-read-bg, #fff3e0); }
-.status-skimmed { background: var(--status-skimmed-bg, #f3e5f5); }
+/* Status and Priority Row Colors with Visual Indicators */
+/* Priority classes with icons for accessibility (not just color) */
+.priority-high {
+    background: var(--priority-high-bg, #ffebee);
+    border-left: 4px solid #d32f2f; /* Visual indicator beyond color */
+}
+.priority-medium {
+    background: var(--priority-medium-bg, #fff3e0);
+    border-left: 4px solid #f57c00; /* Visual indicator beyond color */
+}
+.priority-low {
+    background: var(--priority-low-bg, #e8f5e8);
+    border-left: 4px solid #388e3c; /* Visual indicator beyond color */
+}
+
+/* Status classes with borders for accessibility */
+.status-read {
+    background: var(--status-read-bg, #e8f5e8);
+    border-left: 3px solid #4caf50; /* Visual indicator beyond color */
+}
+.status-reading {
+    background: var(--status-reading-bg, #e3f2fd);
+    border-left: 3px solid #2196f3; /* Visual indicator beyond color */
+}
+.status-to-read {
+    background: var(--status-to-read-bg, #fff3e0);
+    border-left: 3px solid #ff9800; /* Visual indicator beyond color */
+}
+.status-skimmed {
+    background: var(--status-skimmed-bg, #f3e5f5);
+    border-left: 3px solid #9c27b0; /* Visual indicator beyond color */
+}
 
 /* Button Styles */
 .btn {
