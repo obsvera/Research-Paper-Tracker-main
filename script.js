@@ -186,17 +186,17 @@ function showSummary() {
                             ${escapeHtml(paper.title || 'Untitled Paper')}
                         </div>
                         ${paper.authors ? `<div class="paper-authors">${escapeHtml(paper.authors)}</div>` : ''}
-                        <div class="paper-status-compact">
-                            <span class="status-badge">${escapeHtml((paper.status || 'to-read').replace('-', ' '))}</span>
-                        </div>
                     </div>
                     <button class="collapse-toggle" data-paper-id="${paper.id}" title="Click to expand/collapse">▼</button>
                 </div>
 
                 <div class="collapsible-content">
                     <div class="paper-status-info">
-                        <span class="priority-badge">${escapeHtml(paper.priority || 'medium')}</span>
-                        ${stars ? `<span class="rating-stars">${escapeHtml(stars)}</span>` : ''}
+                        <span class="status-badge">${escapeHtml((paper.status || 'to-read').replace('-', ' '))}</span>
+                        <div>
+                            <span class="priority-badge">${escapeHtml(paper.priority || 'medium')}</span>
+                            ${stars ? `<span class="rating-stars">${escapeHtml(stars)}</span>` : ''}
+                        </div>
                     </div>
 
                     <div class="paper-year-journal">
