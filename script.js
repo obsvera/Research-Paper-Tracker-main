@@ -179,51 +179,57 @@ function showSummary() {
 
 
         return `
-            <div class="paper-card" data-paper-id="${paper.id}">
-                <div class="paper-status-info">
-                    <span class="status-badge">${escapeHtml((paper.status || 'to-read').replace('-', ' '))}</span>
-                    <div>
-                        <span class="priority-badge">${escapeHtml(paper.priority || 'medium')}</span>
-                        ${stars ? `<span class="rating-stars">${escapeHtml(stars)}</span>` : ''}
-                    </div>
-                </div>
-
-                <div class="paper-title" data-paper-url="${paperUrl ? escapeHtml(paperUrl) : ''}" title="${paperUrl ? 'Click to open paper' : 'No URL available'}">
-                    ${escapeHtml(paper.title || 'Untitled Paper')}
-                </div>
-
-                ${paper.authors ? `<div class="paper-authors">${escapeHtml(paper.authors)}</div>` : ''}
-
-                <div class="paper-year-journal">
-                    ${paper.year ? escapeHtml(paper.year) : 'Year not specified'}
-                    ${paper.journal ? ` • ${escapeHtml(paper.journal)}` : ''}
-                </div>
-
-                ${keywordTags ? `<div class="paper-keywords">${keywordTags}</div>` : ''}
-
-                ${paper.keyPoints ? `<div class="paper-key-points">
-                    <div class="key-points-header">Key Points:</div>
-                    <div class="key-points-content">${escapeHtml(paper.keyPoints)}</div>
-                </div>` : ''}
-
-                ${paper.notes ? `<div class="paper-relevance">
-                    <div class="relevance-header">Relevance & Notes:</div>
-                    <div class="relevance-content">${escapeHtml(paper.notes)}</div>
-                </div>` : ''}
-
-                <div class="paper-card-actions">
-                    <button class="edit-card-btn" data-paper-id="${paper.id}" title="Edit this paper">✏️ Edit</button>
-                    <button class="delete-card-btn" data-paper-id="${paper.id}" title="Delete this paper">🗑️ Delete</button>
-                    ${paperUrl || paper.hasPDF ? `
-                        <div class="paper-open-dropdown">
-                            <button class="paper-open-btn" data-paper-id="${paper.id}" title="Open paper options">📖 Open Paper ▼</button>
-                            <div class="paper-open-menu" id="dropdown-${paper.id}">
-                                ${paperUrl ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="online">🌐 Open Online</button>` : ''}
-                                ${paper.hasPDF ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="pdf">📄 Open PDF</button>` : ''}
-                            </div>
+            <div class="paper-card collapsed" data-paper-id="${paper.id}">
+                <div class="paper-header">
+                    <div class="paper-header-content">
+                        <div class="paper-title" data-paper-url="${paperUrl ? escapeHtml(paperUrl) : ''}" title="${paperUrl ? 'Click to open paper' : 'No URL available'}">
+                            ${escapeHtml(paper.title || 'Untitled Paper')}
                         </div>
-                    ` : ''}
-                    <button class="copy-citation-card-btn" data-paper-id="${paper.id}" title="Copy citation to clipboard">📋 Copy Citation</button>
+                        ${paper.authors ? `<div class="paper-authors">${escapeHtml(paper.authors)}</div>` : ''}
+                    </div>
+                    <button class="collapse-toggle" data-paper-id="${paper.id}" title="Click to expand/collapse">▼</button>
+                </div>
+
+                <div class="collapsible-content">
+                    <div class="paper-status-info">
+                        <span class="status-badge">${escapeHtml((paper.status || 'to-read').replace('-', ' '))}</span>
+                        <div>
+                            <span class="priority-badge">${escapeHtml(paper.priority || 'medium')}</span>
+                            ${stars ? `<span class="rating-stars">${escapeHtml(stars)}</span>` : ''}
+                        </div>
+                    </div>
+
+                    <div class="paper-year-journal">
+                        ${paper.year ? escapeHtml(paper.year) : 'Year not specified'}
+                        ${paper.journal ? ` • ${escapeHtml(paper.journal)}` : ''}
+                    </div>
+
+                    ${keywordTags ? `<div class="paper-keywords">${keywordTags}</div>` : ''}
+
+                    ${paper.keyPoints ? `<div class="paper-key-points">
+                        <div class="key-points-header">Key Points:</div>
+                        <div class="key-points-content">${escapeHtml(paper.keyPoints)}</div>
+                    </div>` : ''}
+
+                    ${paper.notes ? `<div class="paper-relevance">
+                        <div class="relevance-header">Relevance & Notes:</div>
+                        <div class="relevance-content">${escapeHtml(paper.notes)}</div>
+                    </div>` : ''}
+
+                    <div class="paper-card-actions">
+                        <button class="edit-card-btn" data-paper-id="${paper.id}" title="Edit this paper">✏️ Edit</button>
+                        <button class="delete-card-btn" data-paper-id="${paper.id}" title="Delete this paper">🗑️ Delete</button>
+                        ${paperUrl || paper.hasPDF ? `
+                            <div class="paper-open-dropdown">
+                                <button class="paper-open-btn" data-paper-id="${paper.id}" title="Open paper options">📖 Open Paper ▼</button>
+                                <div class="paper-open-menu" id="dropdown-${paper.id}">
+                                    ${paperUrl ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="online">🌐 Open Online</button>` : ''}
+                                    ${paper.hasPDF ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="pdf">📄 Open PDF</button>` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
+                        <button class="copy-citation-card-btn" data-paper-id="${paper.id}" title="Copy citation to clipboard">📋 Copy Citation</button>
+                    </div>
                 </div>
             </div>
         `;
@@ -3364,6 +3370,19 @@ function setupSummaryEventDelegation() {
             const paperId = parseInt(target.getAttribute('data-paper-id'));
             if (paperId) {
                 deleteRow(paperId);
+            }
+            return;
+        }
+
+        // Handle collapse toggle button clicks
+        if (target.classList.contains('collapse-toggle')) {
+            event.stopPropagation();
+            const paperId = parseInt(target.getAttribute('data-paper-id'));
+            if (paperId) {
+                const card = target.closest('.paper-card');
+                if (card) {
+                    card.classList.toggle('collapsed');
+                }
             }
             return;
         }
