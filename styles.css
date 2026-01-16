@@ -616,6 +616,65 @@ textarea {
     box-shadow: var(--card-hover-shadow);
 }
 
+/* Collapsible card styles */
+.paper-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.paper-header-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.collapse-toggle {
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    font-size: 12px;
+    flex-shrink: 0;
+    transition: transform 0.3s ease, background-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.collapse-toggle:hover {
+    background: var(--accent-hover);
+    transform: scale(1.1);
+}
+
+.paper-card:not(.collapsed) .collapse-toggle {
+    transform: rotate(180deg);
+}
+
+.paper-card:not(.collapsed) .collapse-toggle:hover {
+    transform: rotate(180deg) scale(1.1);
+}
+
+.collapsible-content {
+    max-height: 2000px;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+    opacity: 1;
+}
+
+.paper-card.collapsed .collapsible-content {
+    max-height: 0;
+    opacity: 0;
+}
+
+.paper-card.collapsed .paper-header {
+    margin-bottom: 0;
+}
+
 .paper-title {
     font-size: 16px;
     font-weight: 600;
