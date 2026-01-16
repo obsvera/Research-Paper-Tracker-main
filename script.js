@@ -180,6 +180,10 @@ function showSummary() {
 
         return `
             <div class="paper-card collapsed" data-paper-id="${paper.id}">
+                <div class="paper-status-compact">
+                    <span class="status-badge">${escapeHtml((paper.status || 'to-read').replace('-', ' '))}</span>
+                </div>
+
                 <div class="paper-header">
                     <div class="paper-header-content">
                         <div class="paper-title" data-paper-url="${paperUrl ? escapeHtml(paperUrl) : ''}" title="${paperUrl ? 'Click to open paper' : 'No URL available'}">
