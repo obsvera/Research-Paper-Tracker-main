@@ -28,7 +28,6 @@
                 <input type="text" id="extractedData" placeholder="Enter paper title, URL, DOI, or partial citation..." class="url-input" aria-label="Enter paper information">
                 <button class="btn btn-url" id="dataBtn" aria-label="Add paper from entered information">+ Add</button>
             </div>
-            <button class="btn btn-summary" id="showSummaryBtn" aria-label="Show summary view of all papers">📄 Show Summary</button>
             <div class="smart-input-hint">
                 💡 <strong>Smart Input:</strong> Paste paper titles, URLs, DOIs, or partial citations - any AI assistant can automatically extract the details!
             </div>
@@ -63,54 +62,11 @@
             </div>
         </div>
 
-        <div class="table-container">
-            <div class="table-header-with-toggle">
-                <h3>Papers Table</h3>
-                <button id="tableToggleBtn" class="table-toggle-btn" title="Toggle table visibility" aria-label="Expand or collapse papers table">
-                    <span class="toggle-icon" aria-hidden="true">▼</span>
-                </button>
-            </div>
-            <div id="tableWrapper" class="table-wrapper collapsed">
-                <table id="paperTable">
-                    <thead>
-                        <tr>
-                            <th class="col-narrow">Actions</th>
-                            <th class="col-medium">Type</th>
-                            <th class="col-wide">Title</th>
-                            <th class="col-extra-wide">Authors</th>
-                            <th class="col-narrow">Year</th>
-                            <th class="col-extra-wide">Keywords</th>
-                            <th class="col-extra-wide">Journal/Venue</th>
-                            <th class="col-narrow">Vol</th>
-                            <th class="col-narrow">Issue</th>
-                            <th class="col-narrow">Pages</th>
-                            <th class="col-extra-wide">DOI/URL</th>
-                            <th class="col-narrow">ISSN</th>
-                            <th class="col-extra-wide">Chapter/Topic</th>
-                            <th class="col-notes">Abstract</th>
-                            <th class="col-notes">Relevance</th>
-                            <th class="col-medium">Status</th>
-                            <th class="col-medium">Priority</th>
-                            <th class="col-narrow">Rating</th>
-                            <th class="col-medium">Date Added</th>
-                            <th class="col-notes">Key Points</th>
-                            <th class="col-notes">Notes</th>
-                            <th class="col-narrow">Lang</th>
-                            <th class="col-notes">Citation</th>
-                            <th class="col-pdf">PDF</th>
-                        </tr>
-                    </thead>
-                    <tbody id="paperTableBody">
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Papers Summary Section -->
+        <!-- Papers Section - Editable Cards -->
         <div class="summary-section">
             <div class="summary-header">
-                <h2>📖 Papers Summary - Quick Access</h2>
-                <p>Click any title or link to access the full paper</p>
+                <h2>📖 Research Papers</h2>
+                <p>Click any card to edit • Click paper title or links to open</p>
             </div>
             <div id="papersSummary" class="papers-grid">
                 <div class="empty-state">No papers added yet. Add some papers to see them here!</div>
