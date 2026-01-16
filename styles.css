@@ -630,6 +630,10 @@ textarea {
     min-width: 0;
 }
 
+.paper-status-compact {
+    margin-bottom: 8px;
+}
+
 .collapse-toggle {
     background: var(--accent-color);
     color: white;
