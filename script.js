@@ -3183,8 +3183,7 @@ function initializeEventListeners() {
     // Main control buttons
     document.getElementById('addRowBtn').addEventListener('click', addRow);
     document.getElementById('dataBtn').addEventListener('click', addFromSmartInput);
-    document.getElementById('showSummaryBtn').addEventListener('click', showSummary);
-    
+
     // Export buttons
     document.getElementById('exportBtn').addEventListener('click', exportToCSV);
     document.getElementById('exportJSONBtn').addEventListener('click', exportToJSON);
