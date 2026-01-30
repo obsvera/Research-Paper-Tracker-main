@@ -2978,12 +2978,12 @@ async function addFromSmartInput() {
             }
         } catch (error) {
             hideLoadingIndicator();
-            // Handle specific errors
+            // Handle specific errors - all errors fall back to AI prompt
             const errorMessage = error.message || 'Unknown error occurred';
             if (errorMessage.includes('Rate limit')) {
-                alert('Semantic Scholar rate limit reached. Please wait a moment and try again, or use the AI assistant.');
+                alert('Semantic Scholar rate limit reached. Falling back to AI assistant.');
             }
-            // For other errors, silently fall through to AI prompt
+            // Fall through to AI prompt for all errors
         }
     }
 
