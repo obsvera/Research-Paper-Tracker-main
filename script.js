@@ -2409,6 +2409,167 @@ function parseCSVLine(line) {
     return result;
 }
 
+// Detect if input is a DOI and extract the clean DOI
+function detectDOI(input) {
+    if (!input || typeof input !== 'string') return null;
+
+    const trimmedInput = input.trim();
+
+    // Pattern 1: Full DOI URL (https://doi.org/10.1234/abcd or http://dx.doi.org/10.1234/abcd)
+    const urlPattern = /^https?:\/\/(?:dx\.)?doi\.org\/(.+)$/i;
+    const urlMatch = trimmedInput.match(urlPattern);
+    if (urlMatch) {
+        return decodeURIComponent(urlMatch[1]);
+    }
+
+    // Pattern 2: doi: prefix (doi:10.1234/abcd)
+    const prefixPattern = /^doi:\s*(.+)$/i;
+    const prefixMatch = trimmedInput.match(prefixPattern);
+    if (prefixMatch) {
+        return prefixMatch[1].trim();
+    }
+
+    // Pattern 3: Raw DOI (10.1234/abcd) - DOIs start with 10. followed by registrant code
+    // DOI format: 10.prefix/suffix where prefix is 4-9 digits
+    const rawPattern = /^(10\.\d{4,9}\/[^\s]+)$/;
+    const rawMatch = trimmedInput.match(rawPattern);
+    if (rawMatch) {
+        return rawMatch[1];
+    }
+
+    return null;
+}
+
+// Map CrossRef publication type to our itemType
+function mapCrossRefType(crossRefType) {
+    const typeMap = {
+        'journal-article': 'article',
+        'proceedings-article': 'inproceedings',
+        'book': 'book',
+        'book-chapter': 'book',
+        'monograph': 'book',
+        'edited-book': 'book',
+        'report': 'techreport',
+        'report-series': 'techreport',
+        'dissertation': 'phdthesis',
+        'posted-content': 'misc',
+        'dataset': 'misc',
+        'peer-review': 'misc',
+        'reference-entry': 'misc',
+        'other': 'misc'
+    };
+
+    return typeMap[crossRefType] || 'article';
+}
+
+// Fetch paper data from CrossRef API
+async function fetchFromCrossRef(doi) {
+    const url = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
+
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json',
+            // CrossRef recommends including a User-Agent with mailto for polite pool
+            'User-Agent': 'ResearchPaperTracker/1.0 (mailto:user@example.com)'
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 404) {
+            throw new Error('DOI not found in CrossRef database');
+        }
+        throw new Error(`CrossRef API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const message = data.message;
+
+    // Extract authors - format as "FirstName LastName, FirstName LastName"
+    let authors = '';
+    if (message.author && Array.isArray(message.author)) {
+        authors = message.author
+            .map(a => {
+                const given = a.given || '';
+                const family = a.family || '';
+                return `${given} ${family}`.trim();
+            })
+            .filter(name => name.length > 0)
+            .join(', ');
+    }
+
+    // Extract year from published date
+    let year = '';
+    if (message.published && message.published['date-parts'] && message.published['date-parts'][0]) {
+        year = String(message.published['date-parts'][0][0] || '');
+    } else if (message['published-print'] && message['published-print']['date-parts'] && message['published-print']['date-parts'][0]) {
+        year = String(message['published-print']['date-parts'][0][0] || '');
+    } else if (message['published-online'] && message['published-online']['date-parts'] && message['published-online']['date-parts'][0]) {
+        year = String(message['published-online']['date-parts'][0][0] || '');
+    } else if (message.created && message.created['date-parts'] && message.created['date-parts'][0]) {
+        year = String(message.created['date-parts'][0][0] || '');
+    }
+
+    // Extract title
+    const title = message.title && message.title[0] ? message.title[0] : '';
+
+    // Extract journal/container title
+    const journal = message['container-title'] && message['container-title'][0]
+        ? message['container-title'][0]
+        : '';
+
+    // Extract ISSN
+    const issn = message.ISSN && message.ISSN[0] ? message.ISSN[0] : '';
+
+    // Extract subject/keywords if available
+    let keywords = '';
+    if (message.subject && Array.isArray(message.subject)) {
+        keywords = message.subject.slice(0, 5).join(', ');
+    }
+
+    // Build paper info object
+    const paperInfo = {
+        itemType: mapCrossRefType(message.type || 'journal-article'),
+        title: title,
+        authors: authors,
+        year: year,
+        keywords: keywords,
+        journal: journal,
+        volume: message.volume || '',
+        issue: message.issue || '',
+        pages: message.page || '',
+        doi: message.DOI || doi,
+        issn: issn,
+        chapter: '',
+        abstract: message.abstract ? message.abstract.replace(/<[^>]*>/g, '') : '', // Strip HTML tags from abstract
+        relevance: '',
+        language: message.language || 'en',
+        citation: '',
+        pdf: message.link && message.link[0] ? message.link[0].URL : ''
+    };
+
+    return paperInfo;
+}
+
+// Show loading indicator in the input area
+function showLoadingIndicator() {
+    const dataBtn = document.getElementById('dataBtn');
+    if (dataBtn) {
+        dataBtn.dataset.originalText = dataBtn.textContent;
+        dataBtn.innerHTML = '<span class="loading-spinner"></span>Fetching...';
+        dataBtn.disabled = true;
+    }
+}
+
+// Hide loading indicator and restore button
+function hideLoadingIndicator() {
+    const dataBtn = document.getElementById('dataBtn');
+    if (dataBtn) {
+        dataBtn.textContent = dataBtn.dataset.originalText || '+ Add';
+        dataBtn.disabled = false;
+    }
+}
+
 // Smart input processing function
 async function addFromSmartInput() {
     const input = document.getElementById('extractedData').value.trim();
@@ -2423,28 +2584,63 @@ async function addFromSmartInput() {
         return;
     }
 
-    // Check if input is already valid JSON
+    // Step 1: Check if input is a DOI - auto-fetch from CrossRef
+    const detectedDOI = detectDOI(input);
+    if (detectedDOI) {
+        showLoadingIndicator();
+        try {
+            const paperInfo = await fetchFromCrossRef(detectedDOI);
+            hideLoadingIndicator();
+
+            if (paperInfo && paperInfo.title) {
+                // Successfully fetched paper data - show preview modal
+                showPreviewModal(paperInfo);
+                return;
+            } else {
+                // API returned but no useful data - fall through to AI prompt
+                alert('CrossRef returned incomplete data for this DOI. Please try the AI assistant instead.');
+                showAIPrompt(input);
+                return;
+            }
+        } catch (error) {
+            hideLoadingIndicator();
+            // Show user-friendly error message
+            const errorMessage = error.message || 'Unknown error occurred';
+            if (errorMessage.includes('not found')) {
+                alert(`DOI not found: "${detectedDOI}"\n\nThis DOI may not be registered with CrossRef. You can try the AI assistant to extract paper information.`);
+            } else if (errorMessage.includes('API error')) {
+                alert(`Failed to fetch from CrossRef: ${errorMessage}\n\nPlease try again later or use the AI assistant.`);
+            } else {
+                alert(`Error fetching paper data: ${errorMessage}\n\nFalling back to AI assistant.`);
+            }
+            // Fall through to AI prompt on error
+            showAIPrompt(input);
+            return;
+        }
+    }
+
+    // Step 2: Check if input is already valid JSON
     try {
         const paperInfo = JSON.parse(input);
-        
+
         // Validate that it's an object with expected structure
         if (typeof paperInfo !== 'object' || paperInfo === null || Array.isArray(paperInfo)) {
             throw new Error('Invalid JSON structure');
         }
-        
+
         // Validate required JSON structure for paper info
         const validKeys = ['itemType', 'title', 'authors', 'year', 'keywords', 'journal', 'volume', 'issue', 'pages', 'doi', 'issn', 'chapter', 'abstract', 'relevance', 'language', 'citation', 'pdf'];
         const hasValidStructure = Object.keys(paperInfo).some(key => validKeys.includes(key));
-        
+
         if (!hasValidStructure) {
             throw new Error('JSON does not contain expected paper fields');
         }
-        
+
         // Valid JSON - show preview modal
         showPreviewModal(paperInfo);
         return;
     } catch (e) {
-        // Not valid JSON or not paper structure - show AI prompt instead
+        // Step 3: Not valid JSON or not paper structure - show AI prompt instead
         showAIPrompt(input);
         return;
     }
