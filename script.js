@@ -34,6 +34,8 @@ let errorCount = 0;
 const MAX_ERRORS = 3;
 const STORAGE_KEY = 'research-tracker-data-v1';
 const SETTINGS_KEY = 'research-tracker-settings-v1';
+// Optional contact email used for CrossRef polite pool requests.
+let crossRefMailto = '';
 
 // Papers folder management
 let papersFolderHandle = null;
@@ -1000,6 +1002,7 @@ function saveSettings() {
     try {
         const settings = {
             papersFolderPath: papersFolderPath,
+            crossRefMailto: crossRefMailto,
             lastModified: new Date().toISOString()
         };
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -1014,6 +1017,7 @@ async function loadSettings() {
         if (stored) {
             const settings = JSON.parse(stored);
             papersFolderPath = settings.papersFolderPath || '';
+            crossRefMailto = settings.crossRefMailto || '';
             
             // Note: We can't restore the folder handle across sessions
             // User will need to reselect the folder
@@ -2462,16 +2466,30 @@ function mapCrossRefType(crossRefType) {
     return typeMap[crossRefType] || 'article';
 }
 
+// Basic email validation for CrossRef polite pool contact.
+function isLikelyEmailAddress(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+// Build CrossRef API URL with optional mailto for polite pool access.
+function buildCrossRefUrl(doi) {
+    const url = new URL(`https://api.crossref.org/works/${encodeURIComponent(doi)}`);
+    const trimmedMailto = crossRefMailto.trim();
+    if (trimmedMailto && isLikelyEmailAddress(trimmedMailto)) {
+        // Browsers block custom User-Agent headers, so use mailto query parameter instead.
+        url.searchParams.set('mailto', trimmedMailto);
+    }
+    return url.toString();
+}
+
 // Fetch paper data from CrossRef API
 async function fetchFromCrossRef(doi) {
-    const url = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
+    const url = buildCrossRefUrl(doi);
 
     const response = await fetch(url, {
         method: 'GET',
         headers: {
-            'Accept': 'application/json',
-            // CrossRef recommends including a User-Agent with mailto for polite pool
-            'User-Agent': 'ResearchPaperTracker/1.0 (mailto:user@example.com)'
+            'Accept': 'application/json'
         }
     });
 
@@ -4224,6 +4242,14 @@ function showSettingsModal() {
                 </div>
             </div>
             <div class="settings-section">
+                <h4 class="settings-section-title">CrossRef Polite Pool</h4>
+                <div class="form-group">
+                    <label for="crossRefMailtoInput">Contact email (optional)</label>
+                    <input type="email" id="crossRefMailtoInput" name="crossRefMailto" value="${escapeHtml(crossRefMailto)}" placeholder="name@example.com" autocomplete="email">
+                    <small>Used as the mailto= query parameter for CrossRef requests from the browser.</small>
+                </div>
+            </div>
+            <div class="settings-section">
                 <h4 class="settings-section-title">Page Style</h4>
                 <div class="theme-option" data-theme="default">
                     <div class="theme-preview theme-preview-default"></div>
@@ -4263,6 +4289,26 @@ function showSettingsModal() {
     document.getElementById('settingsCloseBtn').addEventListener('click', closeSettingsModal);
     document.getElementById('selectFolderBtn').addEventListener('click', handleSelectFolder);
     document.getElementById('clearFolderBtn').addEventListener('click', handleClearFolder);
+
+    // Validate and persist the CrossRef mailto setting for polite pool requests.
+    const crossRefMailtoInput = document.getElementById('crossRefMailtoInput');
+    if (crossRefMailtoInput) {
+        crossRefMailtoInput.addEventListener('input', function() {
+            crossRefMailtoInput.setCustomValidity('');
+        });
+
+        crossRefMailtoInput.addEventListener('change', function() {
+            const trimmedValue = crossRefMailtoInput.value.trim();
+            if (trimmedValue && !isLikelyEmailAddress(trimmedValue)) {
+                crossRefMailtoInput.setCustomValidity('Enter a valid email address or leave this blank.');
+                crossRefMailtoInput.reportValidity();
+                return;
+            }
+            crossRefMailto = trimmedValue;
+            crossRefMailtoInput.value = trimmedValue;
+            saveSettings();
+        });
+    }
     
     modal.addEventListener('click', function(e) {
         if (e.target === modal) {
