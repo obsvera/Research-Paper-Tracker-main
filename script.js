@@ -2488,13 +2488,12 @@ async function fetchFromCrossRef(doi) {
 
     // Create AbortController for timeout handling
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout (CrossRef can be slow)
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
     let response;
     try {
         response = await fetch(url, {
             method: 'GET',
-            mode: 'cors',
             headers: {
                 'Accept': 'application/json'
             },
@@ -2502,17 +2501,12 @@ async function fetchFromCrossRef(doi) {
         });
     } catch (fetchError) {
         clearTimeout(timeoutId);
-        console.error('CrossRef fetch error:', fetchError);
         // Handle network-level errors (CORS, connectivity, timeout, etc.)
         if (fetchError.name === 'AbortError') {
             throw new Error('Request timed out. Please check your internet connection and try again.');
         }
-        // Check for CORS-related errors
-        if (fetchError.message && fetchError.message.includes('CORS')) {
-            throw new Error('Cross-origin request blocked. This may be due to browser security settings or an ad blocker.');
-        }
         // Network errors (CORS, no internet, DNS failure, etc.)
-        throw new Error('Network error: Unable to connect to CrossRef. If using Firefox, try disabling Enhanced Tracking Protection for this site.');
+        throw new Error('Network error: Unable to connect to CrossRef. Please check your internet connection or try again later.');
     } finally {
         clearTimeout(timeoutId);
     }
@@ -2692,13 +2686,12 @@ async function searchSemanticScholar(query) {
 
     // Create AbortController for timeout handling
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
     let response;
     try {
         response = await fetch(url, {
             method: 'GET',
-            mode: 'cors',
             headers: {
                 'Accept': 'application/json'
             },
@@ -2706,17 +2699,12 @@ async function searchSemanticScholar(query) {
         });
     } catch (fetchError) {
         clearTimeout(timeoutId);
-        console.error('Semantic Scholar fetch error:', fetchError);
         // Handle network-level errors (CORS, connectivity, timeout, etc.)
         if (fetchError.name === 'AbortError') {
             throw new Error('Request timed out. Please check your internet connection and try again.');
         }
-        // Check for CORS-related errors
-        if (fetchError.message && fetchError.message.includes('CORS')) {
-            throw new Error('Cross-origin request blocked. This may be due to browser security settings or an ad blocker.');
-        }
         // Network errors (CORS, no internet, DNS failure, etc.)
-        throw new Error('Network error: Unable to connect to Semantic Scholar. If using Firefox, try disabling Enhanced Tracking Protection for this site.');
+        throw new Error('Network error: Unable to connect to Semantic Scholar. Please check your internet connection or try again later.');
     } finally {
         clearTimeout(timeoutId);
     }
