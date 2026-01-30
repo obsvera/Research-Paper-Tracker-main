@@ -2486,12 +2486,30 @@ function buildCrossRefUrl(doi) {
 async function fetchFromCrossRef(doi) {
     const url = buildCrossRefUrl(doi);
 
-    const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-            'Accept': 'application/json'
+    // Create AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
+    let response;
+    try {
+        response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            },
+            signal: controller.signal
+        });
+    } catch (fetchError) {
+        clearTimeout(timeoutId);
+        // Handle network-level errors (CORS, connectivity, timeout, etc.)
+        if (fetchError.name === 'AbortError') {
+            throw new Error('Request timed out. Please check your internet connection and try again.');
         }
-    });
+        // Network errors (CORS, no internet, DNS failure, etc.)
+        throw new Error('Network error: Unable to connect to CrossRef. Please check your internet connection or try again later.');
+    } finally {
+        clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
         if (response.status === 404) {
@@ -2500,7 +2518,12 @@ async function fetchFromCrossRef(doi) {
         throw new Error(`CrossRef API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    let data;
+    try {
+        data = await response.json();
+    } catch (parseError) {
+        throw new Error('Invalid response from CrossRef. Please try again later.');
+    }
     const message = data.message;
 
     // Extract authors - format as "FirstName LastName, FirstName LastName"
@@ -2661,12 +2684,30 @@ async function searchSemanticScholar(query) {
     const fields = 'title,authors,year,abstract,citationCount,journal,venue,externalIds,publicationTypes,fieldsOfStudy,openAccessPdf';
     const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&fields=${fields}&limit=10`;
 
-    const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-            'Accept': 'application/json'
+    // Create AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
+    let response;
+    try {
+        response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            },
+            signal: controller.signal
+        });
+    } catch (fetchError) {
+        clearTimeout(timeoutId);
+        // Handle network-level errors (CORS, connectivity, timeout, etc.)
+        if (fetchError.name === 'AbortError') {
+            throw new Error('Request timed out. Please check your internet connection and try again.');
         }
-    });
+        // Network errors (CORS, no internet, DNS failure, etc.)
+        throw new Error('Network error: Unable to connect to Semantic Scholar. Please check your internet connection or try again later.');
+    } finally {
+        clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
         if (response.status === 429) {
@@ -2675,7 +2716,12 @@ async function searchSemanticScholar(query) {
         throw new Error(`Semantic Scholar API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    let data;
+    try {
+        data = await response.json();
+    } catch (parseError) {
+        throw new Error('Invalid response from Semantic Scholar. Please try again later.');
+    }
     return data.data || [];
 }
 
@@ -2943,6 +2989,8 @@ async function addFromSmartInput() {
             const errorMessage = error.message || 'Unknown error occurred';
             if (errorMessage.includes('not found')) {
                 alert(`DOI not found: "${detectedDOI}"\n\nThis DOI may not be registered with CrossRef. You can try the AI assistant to extract paper information.`);
+            } else if (errorMessage.includes('Network error') || errorMessage.includes('timed out')) {
+                alert(`${errorMessage}\n\nYou can try the AI assistant to enter paper information manually.`);
             } else if (errorMessage.includes('API error')) {
                 alert(`Failed to fetch from CrossRef: ${errorMessage}\n\nPlease try again later or use the AI assistant.`);
             } else {
