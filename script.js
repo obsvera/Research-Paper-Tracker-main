@@ -2551,6 +2551,323 @@ async function fetchFromCrossRef(doi) {
     return paperInfo;
 }
 
+// ============================================
+// SEMANTIC SCHOLAR API INTEGRATION
+// ============================================
+
+// Map Semantic Scholar publication type to our itemType
+function mapSemanticScholarType(publicationTypes) {
+    if (!publicationTypes || !Array.isArray(publicationTypes) || publicationTypes.length === 0) {
+        return 'article';
+    }
+
+    const type = publicationTypes[0];
+    const typeMap = {
+        'JournalArticle': 'article',
+        'Conference': 'inproceedings',
+        'Book': 'book',
+        'BookSection': 'book',
+        'Dataset': 'misc',
+        'Preprint': 'misc',
+        'Review': 'article',
+        'CaseReport': 'article',
+        'ClinicalTrial': 'article',
+        'Editorial': 'article',
+        'LettersAndComments': 'misc',
+        'Meta-Analysis': 'article',
+        'News': 'misc',
+        'Study': 'article',
+        'Patent': 'misc'
+    };
+
+    return typeMap[type] || 'article';
+}
+
+// Map Semantic Scholar result to our paper format
+function mapSemanticScholarToPaper(result) {
+    // Extract authors
+    let authors = '';
+    if (result.authors && Array.isArray(result.authors)) {
+        authors = result.authors
+            .map(a => a.name || '')
+            .filter(name => name.length > 0)
+            .join(', ');
+    }
+
+    // Extract DOI from externalIds
+    let doi = '';
+    if (result.externalIds) {
+        doi = result.externalIds.DOI || '';
+    }
+
+    // Extract keywords from fieldsOfStudy
+    let keywords = '';
+    if (result.fieldsOfStudy && Array.isArray(result.fieldsOfStudy)) {
+        keywords = result.fieldsOfStudy.slice(0, 5).join(', ');
+    }
+
+    // Extract journal name
+    let journal = '';
+    if (result.journal && result.journal.name) {
+        journal = result.journal.name;
+    } else if (result.venue) {
+        journal = result.venue;
+    }
+
+    // Build paper info object
+    const paperInfo = {
+        itemType: mapSemanticScholarType(result.publicationTypes),
+        title: result.title || '',
+        authors: authors,
+        year: result.year ? String(result.year) : '',
+        keywords: keywords,
+        journal: journal,
+        volume: result.journal && result.journal.volume ? result.journal.volume : '',
+        issue: '',
+        pages: result.journal && result.journal.pages ? result.journal.pages : '',
+        doi: doi,
+        issn: '',
+        chapter: '',
+        abstract: result.abstract || '',
+        relevance: '',
+        language: 'en',
+        citation: '',
+        pdf: result.openAccessPdf && result.openAccessPdf.url ? result.openAccessPdf.url : ''
+    };
+
+    return paperInfo;
+}
+
+// Search Semantic Scholar API
+async function searchSemanticScholar(query) {
+    const fields = 'title,authors,year,abstract,citationCount,journal,venue,externalIds,publicationTypes,fieldsOfStudy,openAccessPdf';
+    const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&fields=${fields}&limit=10`;
+
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 429) {
+            throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+        }
+        throw new Error(`Semantic Scholar API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.data || [];
+}
+
+// Show search results modal with Semantic Scholar results
+function showSearchResultsModal(results, originalQuery) {
+    // Remove any existing modal
+    const existingModal = document.querySelector('.modal-overlay');
+    if (existingModal) {
+        existingModal.remove();
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+
+    // Create modal content
+    const modalDialog = document.createElement('div');
+    modalDialog.className = 'modal search-results-modal';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'modal-header';
+
+    const title = document.createElement('h3');
+    title.className = 'modal-title';
+    title.textContent = `Search Results for "${originalQuery.length > 40 ? originalQuery.substring(0, 40) + '...' : originalQuery}"`;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'modal-close';
+    closeBtn.id = 'search-close-btn';
+    closeBtn.innerHTML = '&times;';
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    // Content - Results list
+    const content = document.createElement('div');
+    content.className = 'modal-content search-results-content';
+
+    const resultsInfo = document.createElement('p');
+    resultsInfo.className = 'search-results-info';
+    resultsInfo.textContent = `Found ${results.length} paper${results.length !== 1 ? 's' : ''}. Select one to add to your library:`;
+    content.appendChild(resultsInfo);
+
+    // Results container
+    const resultsContainer = document.createElement('div');
+    resultsContainer.className = 'search-results-list';
+
+    results.forEach((result, index) => {
+        const card = document.createElement('div');
+        card.className = 'search-result-card';
+        card.dataset.index = index;
+
+        // Title
+        const titleEl = document.createElement('h4');
+        titleEl.className = 'search-result-title';
+        titleEl.textContent = result.title || 'Untitled';
+        card.appendChild(titleEl);
+
+        // Meta info row (authors, year, journal)
+        const metaRow = document.createElement('div');
+        metaRow.className = 'search-result-meta';
+
+        // Authors
+        if (result.authors && result.authors.length > 0) {
+            const authorsEl = document.createElement('span');
+            authorsEl.className = 'search-result-authors';
+            const authorNames = result.authors.slice(0, 3).map(a => a.name).join(', ');
+            authorsEl.textContent = result.authors.length > 3 ? `${authorNames}, et al.` : authorNames;
+            metaRow.appendChild(authorsEl);
+        }
+
+        // Year and journal
+        const yearJournal = document.createElement('span');
+        yearJournal.className = 'search-result-year-journal';
+        const journalName = result.journal?.name || result.venue || '';
+        const yearText = result.year ? String(result.year) : '';
+        yearJournal.textContent = [yearText, journalName].filter(Boolean).join(' · ');
+        if (yearJournal.textContent) {
+            metaRow.appendChild(yearJournal);
+        }
+
+        card.appendChild(metaRow);
+
+        // Badges row (publication type, citation count)
+        const badgesRow = document.createElement('div');
+        badgesRow.className = 'search-result-badges';
+
+        // Publication type badge
+        if (result.publicationTypes && result.publicationTypes.length > 0) {
+            const typeBadge = document.createElement('span');
+            typeBadge.className = 'search-result-badge type-badge';
+            typeBadge.textContent = result.publicationTypes[0].replace(/([A-Z])/g, ' $1').trim();
+            badgesRow.appendChild(typeBadge);
+        }
+
+        // Citation count
+        if (result.citationCount !== undefined && result.citationCount !== null) {
+            const citeBadge = document.createElement('span');
+            citeBadge.className = 'search-result-badge cite-badge';
+            const citeCount = result.citationCount >= 1000
+                ? `${(result.citationCount / 1000).toFixed(1)}k`
+                : result.citationCount;
+            citeBadge.textContent = `📊 ${citeCount} citations`;
+            badgesRow.appendChild(citeBadge);
+        }
+
+        // Fields of study
+        if (result.fieldsOfStudy && result.fieldsOfStudy.length > 0) {
+            const fieldBadge = document.createElement('span');
+            fieldBadge.className = 'search-result-badge field-badge';
+            fieldBadge.textContent = result.fieldsOfStudy.slice(0, 2).join(', ');
+            badgesRow.appendChild(fieldBadge);
+        }
+
+        if (badgesRow.children.length > 0) {
+            card.appendChild(badgesRow);
+        }
+
+        // Abstract preview
+        if (result.abstract) {
+            const abstractEl = document.createElement('p');
+            abstractEl.className = 'search-result-abstract';
+            const maxLength = 200;
+            abstractEl.textContent = result.abstract.length > maxLength
+                ? result.abstract.substring(0, maxLength) + '...'
+                : result.abstract;
+            card.appendChild(abstractEl);
+        }
+
+        // Select button
+        const selectBtn = document.createElement('button');
+        selectBtn.className = 'search-result-select-btn';
+        selectBtn.textContent = 'Select This Paper';
+        selectBtn.dataset.index = index;
+        card.appendChild(selectBtn);
+
+        resultsContainer.appendChild(card);
+    });
+
+    content.appendChild(resultsContainer);
+
+    // Actions
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+
+    const aiBtn = document.createElement('button');
+    aiBtn.className = 'modal-btn modal-btn-secondary';
+    aiBtn.id = 'search-ai-btn';
+    aiBtn.textContent = "None of these / Try AI extraction";
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'modal-btn modal-btn-secondary';
+    cancelBtn.id = 'search-cancel-btn';
+    cancelBtn.textContent = 'Cancel';
+
+    actions.appendChild(aiBtn);
+    actions.appendChild(cancelBtn);
+
+    // Assemble modal
+    modalDialog.appendChild(header);
+    modalDialog.appendChild(content);
+    modalDialog.appendChild(actions);
+    modal.appendChild(modalDialog);
+
+    document.body.appendChild(modal);
+
+    // Event listeners
+    closeBtn.addEventListener('click', closeSearchResultsModal);
+    cancelBtn.addEventListener('click', closeSearchResultsModal);
+
+    aiBtn.addEventListener('click', () => {
+        closeSearchResultsModal();
+        showAIPrompt(originalQuery);
+    });
+
+    // Select button handlers
+    const selectButtons = modal.querySelectorAll('.search-result-select-btn');
+    selectButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const index = parseInt(e.target.dataset.index, 10);
+            const selectedResult = results[index];
+            closeSearchResultsModal();
+            const paperInfo = mapSemanticScholarToPaper(selectedResult);
+            showPreviewModal(paperInfo);
+        });
+    });
+
+    // Click on card to select (except on button)
+    const cards = modal.querySelectorAll('.search-result-card');
+    cards.forEach(card => {
+        card.addEventListener('click', (e) => {
+            // Don't trigger if clicking the button itself
+            if (e.target.classList.contains('search-result-select-btn')) return;
+            const index = parseInt(card.dataset.index, 10);
+            const selectedResult = results[index];
+            closeSearchResultsModal();
+            const paperInfo = mapSemanticScholarToPaper(selectedResult);
+            showPreviewModal(paperInfo);
+        });
+    });
+}
+
+// Close search results modal
+function closeSearchResultsModal() {
+    const modal = document.querySelector('.modal-overlay');
+    if (modal) {
+        modal.remove();
+    }
+}
+
 // Show loading indicator in the input area
 function showLoadingIndicator() {
     const dataBtn = document.getElementById('dataBtn');
@@ -2640,10 +2957,38 @@ async function addFromSmartInput() {
         showPreviewModal(paperInfo);
         return;
     } catch (e) {
-        // Step 3: Not valid JSON or not paper structure - show AI prompt instead
-        showAIPrompt(input);
-        return;
+        // Not valid JSON - continue to Semantic Scholar search
     }
+
+    // Step 3: Try Semantic Scholar search for search queries (title, keywords, author name)
+    if (input.length > 3) {
+        showLoadingIndicator();
+        try {
+            const results = await searchSemanticScholar(input);
+
+            hideLoadingIndicator();
+
+            if (results && results.length > 0) {
+                // Found results - show search results picker
+                showSearchResultsModal(results, input);
+                return;
+            } else {
+                // No results found - fall through to AI prompt
+                // Don't show alert, just silently fall through
+            }
+        } catch (error) {
+            hideLoadingIndicator();
+            // Handle specific errors
+            const errorMessage = error.message || 'Unknown error occurred';
+            if (errorMessage.includes('Rate limit')) {
+                alert('Semantic Scholar rate limit reached. Please wait a moment and try again, or use the AI assistant.');
+            }
+            // For other errors, silently fall through to AI prompt
+        }
+    }
+
+    // Step 4: Fall back to AI prompt
+    showAIPrompt(input);
 }
 
 // Show AI prompt for user to copy

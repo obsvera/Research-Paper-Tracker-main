@@ -2183,3 +2183,198 @@ body[data-theme="clean"] {
     background: #dc2626;
     transform: translateY(-1px);
 }
+
+/* ============================================
+   SEMANTIC SCHOLAR SEARCH RESULTS MODAL
+   ============================================ */
+
+.search-results-modal {
+    max-width: 700px;
+    max-height: 85vh;
+}
+
+.search-results-content {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+
+.search-results-info {
+    color: var(--text-secondary, #666);
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+
+.search-results-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.search-result-card {
+    background: var(--bg-primary, #fff);
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 8px;
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.search-result-card:hover {
+    border-color: var(--accent-color, #4a90e2);
+    box-shadow: 0 2px 8px rgba(74, 144, 226, 0.15);
+    transform: translateY(-1px);
+}
+
+.search-result-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary, #2c3e50);
+    margin: 0 0 8px 0;
+    line-height: 1.4;
+}
+
+.search-result-card:hover .search-result-title {
+    color: var(--accent-color, #4a90e2);
+}
+
+.search-result-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-secondary, #666);
+}
+
+.search-result-authors {
+    font-style: italic;
+}
+
+.search-result-year-journal {
+    color: var(--text-secondary, #888);
+}
+
+.search-result-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.search-result-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.search-result-badge.type-badge {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.search-result-badge.cite-badge {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+.search-result-badge.field-badge {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+
+.search-result-abstract {
+    font-size: 13px;
+    color: var(--text-secondary, #555);
+    line-height: 1.5;
+    margin: 0 0 12px 0;
+}
+
+.search-result-select-btn {
+    background: var(--accent-color, #4a90e2);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.search-result-select-btn:hover {
+    background: var(--accent-hover, #357abd);
+}
+
+/* Dark theme support for search results */
+body[data-theme="dark"] .search-result-card {
+    background: var(--bg-secondary, #2d2d2d);
+    border-color: var(--border-color, #404040);
+}
+
+body[data-theme="dark"] .search-result-card:hover {
+    border-color: var(--accent-color, #3498db);
+    box-shadow: 0 2px 8px rgba(52, 152, 219, 0.2);
+}
+
+body[data-theme="dark"] .search-result-badge.type-badge {
+    background: rgba(52, 152, 219, 0.2);
+    color: #5dade2;
+}
+
+body[data-theme="dark"] .search-result-badge.cite-badge {
+    background: rgba(230, 126, 34, 0.2);
+    color: #f5b041;
+}
+
+body[data-theme="dark"] .search-result-badge.field-badge {
+    background: rgba(155, 89, 182, 0.2);
+    color: #bb8fce;
+}
+
+/* Mobile responsive styles for search results */
+@media (max-width: 600px) {
+    .search-results-modal {
+        max-width: 95%;
+        max-height: 90vh;
+        padding: 16px;
+    }
+
+    .search-results-content {
+        max-height: 55vh;
+    }
+
+    .search-result-card {
+        padding: 12px;
+    }
+
+    .search-result-title {
+        font-size: 14px;
+    }
+
+    .search-result-meta {
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .search-result-badges {
+        gap: 4px;
+    }
+
+    .search-result-badge {
+        font-size: 10px;
+        padding: 2px 6px;
+    }
+
+    .search-result-abstract {
+        font-size: 12px;
+    }
+
+    .search-result-select-btn {
+        width: 100%;
+        padding: 10px;
+    }
+}
