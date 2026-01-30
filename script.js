@@ -34,6 +34,8 @@ let errorCount = 0;
 const MAX_ERRORS = 3;
 const STORAGE_KEY = 'research-tracker-data-v1';
 const SETTINGS_KEY = 'research-tracker-settings-v1';
+// Optional contact email used for CrossRef polite pool requests.
+let crossRefMailto = '';
 
 // Papers folder management
 let papersFolderHandle = null;
@@ -1000,6 +1002,7 @@ function saveSettings() {
     try {
         const settings = {
             papersFolderPath: papersFolderPath,
+            crossRefMailto: crossRefMailto,
             lastModified: new Date().toISOString()
         };
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -1014,6 +1017,7 @@ async function loadSettings() {
         if (stored) {
             const settings = JSON.parse(stored);
             papersFolderPath = settings.papersFolderPath || '';
+            crossRefMailto = settings.crossRefMailto || '';
             
             // Note: We can't restore the folder handle across sessions
             // User will need to reselect the folder
@@ -2409,6 +2413,498 @@ function parseCSVLine(line) {
     return result;
 }
 
+// Detect if input is a DOI and extract the clean DOI
+function detectDOI(input) {
+    if (!input || typeof input !== 'string') return null;
+
+    const trimmedInput = input.trim();
+
+    // Pattern 1: Full DOI URL (https://doi.org/10.1234/abcd or http://dx.doi.org/10.1234/abcd)
+    const urlPattern = /^https?:\/\/(?:dx\.)?doi\.org\/(.+)$/i;
+    const urlMatch = trimmedInput.match(urlPattern);
+    if (urlMatch) {
+        return decodeURIComponent(urlMatch[1]);
+    }
+
+    // Pattern 2: doi: prefix (doi:10.1234/abcd)
+    const prefixPattern = /^doi:\s*(.+)$/i;
+    const prefixMatch = trimmedInput.match(prefixPattern);
+    if (prefixMatch) {
+        return prefixMatch[1].trim();
+    }
+
+    // Pattern 3: Raw DOI (10.1234/abcd) - DOIs start with 10. followed by registrant code
+    // DOI format: 10.prefix/suffix where prefix is 4-9 digits
+    const rawPattern = /^(10\.\d{4,9}\/[^\s]+)$/;
+    const rawMatch = trimmedInput.match(rawPattern);
+    if (rawMatch) {
+        return rawMatch[1];
+    }
+
+    return null;
+}
+
+// Map CrossRef publication type to our itemType
+function mapCrossRefType(crossRefType) {
+    const typeMap = {
+        'journal-article': 'article',
+        'proceedings-article': 'inproceedings',
+        'book': 'book',
+        'book-chapter': 'book',
+        'monograph': 'book',
+        'edited-book': 'book',
+        'report': 'techreport',
+        'report-series': 'techreport',
+        'dissertation': 'phdthesis',
+        'posted-content': 'misc',
+        'dataset': 'misc',
+        'peer-review': 'misc',
+        'reference-entry': 'misc',
+        'other': 'misc'
+    };
+
+    return typeMap[crossRefType] || 'article';
+}
+
+// Basic email validation for CrossRef polite pool contact.
+function isLikelyEmailAddress(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+// Build CrossRef API URL with optional mailto for polite pool access.
+function buildCrossRefUrl(doi) {
+    const url = new URL(`https://api.crossref.org/works/${encodeURIComponent(doi)}`);
+    const trimmedMailto = crossRefMailto.trim();
+    if (trimmedMailto && isLikelyEmailAddress(trimmedMailto)) {
+        // Browsers block custom User-Agent headers, so use mailto query parameter instead.
+        url.searchParams.set('mailto', trimmedMailto);
+    }
+    return url.toString();
+}
+
+// Fetch paper data from CrossRef API
+async function fetchFromCrossRef(doi) {
+    const url = buildCrossRefUrl(doi);
+
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 404) {
+            throw new Error('DOI not found in CrossRef database');
+        }
+        throw new Error(`CrossRef API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const message = data.message;
+
+    // Extract authors - format as "FirstName LastName, FirstName LastName"
+    let authors = '';
+    if (message.author && Array.isArray(message.author)) {
+        authors = message.author
+            .map(a => {
+                const given = a.given || '';
+                const family = a.family || '';
+                return `${given} ${family}`.trim();
+            })
+            .filter(name => name.length > 0)
+            .join(', ');
+    }
+
+    // Extract year from published date
+    let year = '';
+    if (message.published && message.published['date-parts'] && message.published['date-parts'][0]) {
+        year = String(message.published['date-parts'][0][0] || '');
+    } else if (message['published-print'] && message['published-print']['date-parts'] && message['published-print']['date-parts'][0]) {
+        year = String(message['published-print']['date-parts'][0][0] || '');
+    } else if (message['published-online'] && message['published-online']['date-parts'] && message['published-online']['date-parts'][0]) {
+        year = String(message['published-online']['date-parts'][0][0] || '');
+    } else if (message.created && message.created['date-parts'] && message.created['date-parts'][0]) {
+        year = String(message.created['date-parts'][0][0] || '');
+    }
+
+    // Extract title
+    const title = message.title && message.title[0] ? message.title[0] : '';
+
+    // Extract journal/container title
+    const journal = message['container-title'] && message['container-title'][0]
+        ? message['container-title'][0]
+        : '';
+
+    // Extract ISSN
+    const issn = message.ISSN && message.ISSN[0] ? message.ISSN[0] : '';
+
+    // Extract subject/keywords if available
+    let keywords = '';
+    if (message.subject && Array.isArray(message.subject)) {
+        keywords = message.subject.slice(0, 5).join(', ');
+    }
+
+    // Build paper info object
+    const paperInfo = {
+        itemType: mapCrossRefType(message.type || 'journal-article'),
+        title: title,
+        authors: authors,
+        year: year,
+        keywords: keywords,
+        journal: journal,
+        volume: message.volume || '',
+        issue: message.issue || '',
+        pages: message.page || '',
+        doi: message.DOI || doi,
+        issn: issn,
+        chapter: '',
+        abstract: message.abstract ? message.abstract.replace(/<[^>]*>/g, '') : '', // Strip HTML tags from abstract
+        relevance: '',
+        language: message.language || 'en',
+        citation: '',
+        pdf: message.link && message.link[0] ? message.link[0].URL : ''
+    };
+
+    return paperInfo;
+}
+
+// ============================================
+// SEMANTIC SCHOLAR API INTEGRATION
+// ============================================
+
+// Map Semantic Scholar publication type to our itemType
+function mapSemanticScholarType(publicationTypes) {
+    if (!publicationTypes || !Array.isArray(publicationTypes) || publicationTypes.length === 0) {
+        return 'article';
+    }
+
+    const type = publicationTypes[0];
+    const typeMap = {
+        'JournalArticle': 'article',
+        'Conference': 'inproceedings',
+        'Book': 'book',
+        'BookSection': 'book',
+        'Dataset': 'misc',
+        'Preprint': 'misc',
+        'Review': 'article',
+        'CaseReport': 'article',
+        'ClinicalTrial': 'article',
+        'Editorial': 'article',
+        'LettersAndComments': 'misc',
+        'Meta-Analysis': 'article',
+        'News': 'misc',
+        'Study': 'article',
+        'Patent': 'misc'
+    };
+
+    return typeMap[type] || 'article';
+}
+
+// Map Semantic Scholar result to our paper format
+function mapSemanticScholarToPaper(result) {
+    // Extract authors
+    let authors = '';
+    if (result.authors && Array.isArray(result.authors)) {
+        authors = result.authors
+            .map(a => a.name || '')
+            .filter(name => name.length > 0)
+            .join(', ');
+    }
+
+    // Extract DOI from externalIds
+    let doi = '';
+    if (result.externalIds) {
+        doi = result.externalIds.DOI || '';
+    }
+
+    // Extract keywords from fieldsOfStudy
+    let keywords = '';
+    if (result.fieldsOfStudy && Array.isArray(result.fieldsOfStudy)) {
+        keywords = result.fieldsOfStudy.slice(0, 5).join(', ');
+    }
+
+    // Extract journal name
+    let journal = '';
+    if (result.journal && result.journal.name) {
+        journal = result.journal.name;
+    } else if (result.venue) {
+        journal = result.venue;
+    }
+
+    // Build paper info object
+    const paperInfo = {
+        itemType: mapSemanticScholarType(result.publicationTypes),
+        title: result.title || '',
+        authors: authors,
+        year: result.year ? String(result.year) : '',
+        keywords: keywords,
+        journal: journal,
+        volume: result.journal && result.journal.volume ? result.journal.volume : '',
+        issue: '',
+        pages: result.journal && result.journal.pages ? result.journal.pages : '',
+        doi: doi,
+        issn: '',
+        chapter: '',
+        abstract: result.abstract || '',
+        relevance: '',
+        language: 'en',
+        citation: '',
+        pdf: result.openAccessPdf && result.openAccessPdf.url ? result.openAccessPdf.url : ''
+    };
+
+    return paperInfo;
+}
+
+// Search Semantic Scholar API
+async function searchSemanticScholar(query) {
+    const fields = 'title,authors,year,abstract,citationCount,journal,venue,externalIds,publicationTypes,fieldsOfStudy,openAccessPdf';
+    const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&fields=${fields}&limit=10`;
+
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 429) {
+            throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+        }
+        throw new Error(`Semantic Scholar API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.data || [];
+}
+
+// Show search results modal with Semantic Scholar results
+function showSearchResultsModal(results, originalQuery) {
+    // Remove any existing modal
+    const existingModal = document.querySelector('.modal-overlay');
+    if (existingModal) {
+        existingModal.remove();
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+
+    // Create modal content
+    const modalDialog = document.createElement('div');
+    modalDialog.className = 'modal search-results-modal';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'modal-header';
+
+    const title = document.createElement('h3');
+    title.className = 'modal-title';
+    title.textContent = `Search Results for "${originalQuery.length > 40 ? originalQuery.substring(0, 40) + '...' : originalQuery}"`;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'modal-close';
+    closeBtn.id = 'search-close-btn';
+    closeBtn.innerHTML = '&times;';
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    // Content - Results list
+    const content = document.createElement('div');
+    content.className = 'modal-content search-results-content';
+
+    const resultsInfo = document.createElement('p');
+    resultsInfo.className = 'search-results-info';
+    resultsInfo.textContent = `Found ${results.length} paper${results.length !== 1 ? 's' : ''}. Select one to add to your library:`;
+    content.appendChild(resultsInfo);
+
+    // Results container
+    const resultsContainer = document.createElement('div');
+    resultsContainer.className = 'search-results-list';
+
+    results.forEach((result, index) => {
+        const card = document.createElement('div');
+        card.className = 'search-result-card';
+        card.dataset.index = index;
+
+        // Title
+        const titleEl = document.createElement('h4');
+        titleEl.className = 'search-result-title';
+        titleEl.textContent = result.title || 'Untitled';
+        card.appendChild(titleEl);
+
+        // Meta info row (authors, year, journal)
+        const metaRow = document.createElement('div');
+        metaRow.className = 'search-result-meta';
+
+        // Authors
+        if (result.authors && result.authors.length > 0) {
+            const authorsEl = document.createElement('span');
+            authorsEl.className = 'search-result-authors';
+            const authorNames = result.authors.slice(0, 3).map(a => a.name).join(', ');
+            authorsEl.textContent = result.authors.length > 3 ? `${authorNames}, et al.` : authorNames;
+            metaRow.appendChild(authorsEl);
+        }
+
+        // Year and journal
+        const yearJournal = document.createElement('span');
+        yearJournal.className = 'search-result-year-journal';
+        const journalName = result.journal?.name || result.venue || '';
+        const yearText = result.year ? String(result.year) : '';
+        yearJournal.textContent = [yearText, journalName].filter(Boolean).join(' · ');
+        if (yearJournal.textContent) {
+            metaRow.appendChild(yearJournal);
+        }
+
+        card.appendChild(metaRow);
+
+        // Badges row (publication type, citation count)
+        const badgesRow = document.createElement('div');
+        badgesRow.className = 'search-result-badges';
+
+        // Publication type badge
+        if (result.publicationTypes && result.publicationTypes.length > 0) {
+            const typeBadge = document.createElement('span');
+            typeBadge.className = 'search-result-badge type-badge';
+            typeBadge.textContent = result.publicationTypes[0].replace(/([A-Z])/g, ' $1').trim();
+            badgesRow.appendChild(typeBadge);
+        }
+
+        // Citation count
+        if (result.citationCount !== undefined && result.citationCount !== null) {
+            const citeBadge = document.createElement('span');
+            citeBadge.className = 'search-result-badge cite-badge';
+            const citeCount = result.citationCount >= 1000
+                ? `${(result.citationCount / 1000).toFixed(1)}k`
+                : result.citationCount;
+            citeBadge.textContent = `📊 ${citeCount} citations`;
+            badgesRow.appendChild(citeBadge);
+        }
+
+        // Fields of study
+        if (result.fieldsOfStudy && result.fieldsOfStudy.length > 0) {
+            const fieldBadge = document.createElement('span');
+            fieldBadge.className = 'search-result-badge field-badge';
+            fieldBadge.textContent = result.fieldsOfStudy.slice(0, 2).join(', ');
+            badgesRow.appendChild(fieldBadge);
+        }
+
+        if (badgesRow.children.length > 0) {
+            card.appendChild(badgesRow);
+        }
+
+        // Abstract preview
+        if (result.abstract) {
+            const abstractEl = document.createElement('p');
+            abstractEl.className = 'search-result-abstract';
+            const maxLength = 200;
+            abstractEl.textContent = result.abstract.length > maxLength
+                ? result.abstract.substring(0, maxLength) + '...'
+                : result.abstract;
+            card.appendChild(abstractEl);
+        }
+
+        // Select button
+        const selectBtn = document.createElement('button');
+        selectBtn.className = 'search-result-select-btn';
+        selectBtn.textContent = 'Select This Paper';
+        selectBtn.dataset.index = index;
+        card.appendChild(selectBtn);
+
+        resultsContainer.appendChild(card);
+    });
+
+    content.appendChild(resultsContainer);
+
+    // Actions
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+
+    const aiBtn = document.createElement('button');
+    aiBtn.className = 'modal-btn modal-btn-secondary';
+    aiBtn.id = 'search-ai-btn';
+    aiBtn.textContent = "None of these / Try AI extraction";
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'modal-btn modal-btn-secondary';
+    cancelBtn.id = 'search-cancel-btn';
+    cancelBtn.textContent = 'Cancel';
+
+    actions.appendChild(aiBtn);
+    actions.appendChild(cancelBtn);
+
+    // Assemble modal
+    modalDialog.appendChild(header);
+    modalDialog.appendChild(content);
+    modalDialog.appendChild(actions);
+    modal.appendChild(modalDialog);
+
+    document.body.appendChild(modal);
+
+    // Event listeners
+    closeBtn.addEventListener('click', closeSearchResultsModal);
+    cancelBtn.addEventListener('click', closeSearchResultsModal);
+
+    aiBtn.addEventListener('click', () => {
+        closeSearchResultsModal();
+        showAIPrompt(originalQuery);
+    });
+
+    // Select button handlers
+    const selectButtons = modal.querySelectorAll('.search-result-select-btn');
+    selectButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const index = parseInt(e.target.dataset.index, 10);
+            const selectedResult = results[index];
+            closeSearchResultsModal();
+            const paperInfo = mapSemanticScholarToPaper(selectedResult);
+            showPreviewModal(paperInfo);
+        });
+    });
+
+    // Click on card to select (except on button)
+    const cards = modal.querySelectorAll('.search-result-card');
+    cards.forEach(card => {
+        card.addEventListener('click', (e) => {
+            // Don't trigger if clicking the button itself
+            if (e.target.classList.contains('search-result-select-btn')) return;
+            const index = parseInt(card.dataset.index, 10);
+            const selectedResult = results[index];
+            closeSearchResultsModal();
+            const paperInfo = mapSemanticScholarToPaper(selectedResult);
+            showPreviewModal(paperInfo);
+        });
+    });
+}
+
+// Close search results modal
+function closeSearchResultsModal() {
+    const modal = document.querySelector('.modal-overlay');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+// Show loading indicator in the input area
+function showLoadingIndicator() {
+    const dataBtn = document.getElementById('dataBtn');
+    if (dataBtn) {
+        dataBtn.dataset.originalText = dataBtn.textContent;
+        dataBtn.innerHTML = '<span class="loading-spinner"></span>Fetching...';
+        dataBtn.disabled = true;
+    }
+}
+
+// Hide loading indicator and restore button
+function hideLoadingIndicator() {
+    const dataBtn = document.getElementById('dataBtn');
+    if (dataBtn) {
+        dataBtn.textContent = dataBtn.dataset.originalText || '+ Add';
+        dataBtn.disabled = false;
+    }
+}
+
 // Smart input processing function
 async function addFromSmartInput() {
     const input = document.getElementById('extractedData').value.trim();
@@ -2423,31 +2919,94 @@ async function addFromSmartInput() {
         return;
     }
 
-    // Check if input is already valid JSON
+    // Step 1: Check if input is a DOI - auto-fetch from CrossRef
+    const detectedDOI = detectDOI(input);
+    if (detectedDOI) {
+        showLoadingIndicator();
+        try {
+            const paperInfo = await fetchFromCrossRef(detectedDOI);
+            hideLoadingIndicator();
+
+            if (paperInfo && paperInfo.title) {
+                // Successfully fetched paper data - show preview modal
+                showPreviewModal(paperInfo);
+                return;
+            } else {
+                // API returned but no useful data - fall through to AI prompt
+                alert('CrossRef returned incomplete data for this DOI. Please try the AI assistant instead.');
+                showAIPrompt(input);
+                return;
+            }
+        } catch (error) {
+            hideLoadingIndicator();
+            // Show user-friendly error message
+            const errorMessage = error.message || 'Unknown error occurred';
+            if (errorMessage.includes('not found')) {
+                alert(`DOI not found: "${detectedDOI}"\n\nThis DOI may not be registered with CrossRef. You can try the AI assistant to extract paper information.`);
+            } else if (errorMessage.includes('API error')) {
+                alert(`Failed to fetch from CrossRef: ${errorMessage}\n\nPlease try again later or use the AI assistant.`);
+            } else {
+                alert(`Error fetching paper data: ${errorMessage}\n\nFalling back to AI assistant.`);
+            }
+            // Fall through to AI prompt on error
+            showAIPrompt(input);
+            return;
+        }
+    }
+
+    // Step 2: Check if input is already valid JSON
     try {
         const paperInfo = JSON.parse(input);
-        
+
         // Validate that it's an object with expected structure
         if (typeof paperInfo !== 'object' || paperInfo === null || Array.isArray(paperInfo)) {
             throw new Error('Invalid JSON structure');
         }
-        
+
         // Validate required JSON structure for paper info
         const validKeys = ['itemType', 'title', 'authors', 'year', 'keywords', 'journal', 'volume', 'issue', 'pages', 'doi', 'issn', 'chapter', 'abstract', 'relevance', 'language', 'citation', 'pdf'];
         const hasValidStructure = Object.keys(paperInfo).some(key => validKeys.includes(key));
-        
+
         if (!hasValidStructure) {
             throw new Error('JSON does not contain expected paper fields');
         }
-        
+
         // Valid JSON - show preview modal
         showPreviewModal(paperInfo);
         return;
     } catch (e) {
-        // Not valid JSON or not paper structure - show AI prompt instead
-        showAIPrompt(input);
-        return;
+        // Not valid JSON - continue to Semantic Scholar search
     }
+
+    // Step 3: Try Semantic Scholar search for search queries (title, keywords, author name)
+    if (input.length > 3) {
+        showLoadingIndicator();
+        try {
+            const results = await searchSemanticScholar(input);
+
+            hideLoadingIndicator();
+
+            if (results && results.length > 0) {
+                // Found results - show search results picker
+                showSearchResultsModal(results, input);
+                return;
+            } else {
+                // No results found - fall through to AI prompt
+                // Don't show alert, just silently fall through
+            }
+        } catch (error) {
+            hideLoadingIndicator();
+            // Handle specific errors - all errors fall back to AI prompt
+            const errorMessage = error.message || 'Unknown error occurred';
+            if (errorMessage.includes('Rate limit')) {
+                alert('Semantic Scholar rate limit reached. Falling back to AI assistant.');
+            }
+            // Fall through to AI prompt for all errors
+        }
+    }
+
+    // Step 4: Fall back to AI prompt
+    showAIPrompt(input);
 }
 
 // Show AI prompt for user to copy
@@ -3683,6 +4242,14 @@ function showSettingsModal() {
                 </div>
             </div>
             <div class="settings-section">
+                <h4 class="settings-section-title">CrossRef Polite Pool</h4>
+                <div class="form-group">
+                    <label for="crossRefMailtoInput">Contact email (optional)</label>
+                    <input type="email" id="crossRefMailtoInput" name="crossRefMailto" value="${escapeHtml(crossRefMailto)}" placeholder="name@example.com" autocomplete="email">
+                    <small>Used as the mailto= query parameter for CrossRef requests from the browser.</small>
+                </div>
+            </div>
+            <div class="settings-section">
                 <h4 class="settings-section-title">Page Style</h4>
                 <div class="theme-option" data-theme="default">
                     <div class="theme-preview theme-preview-default"></div>
@@ -3722,6 +4289,26 @@ function showSettingsModal() {
     document.getElementById('settingsCloseBtn').addEventListener('click', closeSettingsModal);
     document.getElementById('selectFolderBtn').addEventListener('click', handleSelectFolder);
     document.getElementById('clearFolderBtn').addEventListener('click', handleClearFolder);
+
+    // Validate and persist the CrossRef mailto setting for polite pool requests.
+    const crossRefMailtoInput = document.getElementById('crossRefMailtoInput');
+    if (crossRefMailtoInput) {
+        crossRefMailtoInput.addEventListener('input', function() {
+            crossRefMailtoInput.setCustomValidity('');
+        });
+
+        crossRefMailtoInput.addEventListener('change', function() {
+            const trimmedValue = crossRefMailtoInput.value.trim();
+            if (trimmedValue && !isLikelyEmailAddress(trimmedValue)) {
+                crossRefMailtoInput.setCustomValidity('Enter a valid email address or leave this blank.');
+                crossRefMailtoInput.reportValidity();
+                return;
+            }
+            crossRefMailto = trimmedValue;
+            crossRefMailtoInput.value = trimmedValue;
+            saveSettings();
+        });
+    }
     
     modal.addEventListener('click', function(e) {
         if (e.target === modal) {
