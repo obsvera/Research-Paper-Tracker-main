@@ -193,7 +193,15 @@ function showSummary() {
                         </div>
                         ${paper.authors ? `<div class="paper-authors">${escapeHtml(paper.authors)}</div>` : ''}
                     </div>
-                    <button class="collapse-toggle" data-paper-id="${paper.id}" title="Click to expand/collapse">▼</button>
+                    <div class="paper-header-controls">
+                        <button class="collapse-toggle" data-paper-id="${paper.id}" title="Click to expand/collapse">▼</button>
+                        <div class="pdf-indicator-collapsed">
+                            ${paper.hasPDF ?
+                                `<span class="pdf-badge-small" data-paper-id="${paper.id}" onclick="openPDF(${paper.id})" title="Click to open PDF">📄</span>` :
+                                `<span class="pdf-badge-small inactive" title="No PDF attached">📎</span>`
+                            }
+                        </div>
+                    </div>
                 </div>
 
                 <div class="collapsible-content">
@@ -234,6 +242,13 @@ function showSummary() {
                                 </div>
                             </div>
                         ` : ''}
+                        <div class="pdf-card-controls">
+                            ${!paper.hasPDF ?
+                                `<button class="btn-attach-pdf" data-paper-id="${paper.id}" title="Attach PDF file">📎 Attach PDF</button>` :
+                                `<button class="btn-open-pdf" data-paper-id="${paper.id}" title="Open PDF">📄 Open</button>
+                                 <button class="btn-remove-pdf-small" data-paper-id="${paper.id}" title="Remove PDF">✕</button>`
+                            }
+                        </div>
                         <button class="copy-citation-card-btn" data-paper-id="${paper.id}" title="Copy citation to clipboard">📋 Copy Citation</button>
                     </div>
                 </div>
@@ -1307,6 +1322,23 @@ function updateSummaryCardPDF(card, paperId) {
     const paper = papers.find(p => p.id === paperId);
     if (!paper) return;
 
+    // Update collapsed view PDF indicator
+    const pdfIndicatorCollapsed = card.querySelector('.pdf-indicator-collapsed');
+    if (pdfIndicatorCollapsed) {
+        pdfIndicatorCollapsed.innerHTML = paper.hasPDF ?
+            `<span class="pdf-badge-small" data-paper-id="${paperId}" onclick="openPDF(${paperId})" title="Click to open PDF">📄</span>` :
+            `<span class="pdf-badge-small inactive" title="No PDF attached">📎</span>`;
+    }
+
+    // Update expanded view PDF controls
+    const pdfCardControls = card.querySelector('.pdf-card-controls');
+    if (pdfCardControls) {
+        pdfCardControls.innerHTML = !paper.hasPDF ?
+            `<button class="btn-attach-pdf" data-paper-id="${paperId}" title="Attach PDF file">📎 Attach PDF</button>` :
+            `<button class="btn-open-pdf" data-paper-id="${paperId}" title="Open PDF">📄 Open</button>
+             <button class="btn-remove-pdf-small" data-paper-id="${paperId}" title="Remove PDF">✕</button>`;
+    }
+
     const actionsContainer = card.querySelector('.paper-card-actions');
     if (!actionsContainer) return;
 
@@ -1328,15 +1360,21 @@ function updateSummaryCardPDF(card, paperId) {
                 </div>
             </div>
         `;
-        
-        // Insert before the copy citation button
-        const copyBtn = actionsContainer.querySelector('.copy-citation-card-btn');
-        if (copyBtn) {
-            copyBtn.insertAdjacentHTML('beforebegin', dropdownHTML);
+
+        // Insert before the PDF card controls
+        const pdfControls = actionsContainer.querySelector('.pdf-card-controls');
+        if (pdfControls) {
+            pdfControls.insertAdjacentHTML('beforebegin', dropdownHTML);
         } else {
-            actionsContainer.insertAdjacentHTML('beforeend', dropdownHTML);
+            // Fallback: insert before the copy citation button
+            const copyBtn = actionsContainer.querySelector('.copy-citation-card-btn');
+            if (copyBtn) {
+                copyBtn.insertAdjacentHTML('beforebegin', dropdownHTML);
+            } else {
+                actionsContainer.insertAdjacentHTML('beforeend', dropdownHTML);
+            }
         }
-        
+
         // Reattach event listeners for the new dropdown
         attachDropdownEventListeners(actionsContainer);
     } else {
@@ -4024,6 +4062,46 @@ function setupSummaryEventDelegation() {
             const action = target.getAttribute('data-action');
             if (paperId && action) {
                 handlePaperOpenAction(paperId, action);
+            }
+            return;
+        }
+
+        // Handle PDF attach button clicks
+        if (target.classList.contains('btn-attach-pdf')) {
+            event.stopPropagation();
+            const paperId = parseInt(target.getAttribute('data-paper-id'));
+            if (paperId) {
+                attachPDF(paperId);
+            }
+            return;
+        }
+
+        // Handle PDF open button clicks
+        if (target.classList.contains('btn-open-pdf')) {
+            event.stopPropagation();
+            const paperId = parseInt(target.getAttribute('data-paper-id'));
+            if (paperId) {
+                openPDF(paperId);
+            }
+            return;
+        }
+
+        // Handle PDF remove button clicks
+        if (target.classList.contains('btn-remove-pdf-small')) {
+            event.stopPropagation();
+            const paperId = parseInt(target.getAttribute('data-paper-id'));
+            if (paperId) {
+                removePDF(paperId);
+            }
+            return;
+        }
+
+        // Handle collapsed PDF badge clicks (to open PDF)
+        if (target.classList.contains('pdf-badge-small') && !target.classList.contains('inactive')) {
+            event.stopPropagation();
+            const paperId = parseInt(target.getAttribute('data-paper-id'));
+            if (paperId) {
+                openPDF(paperId);
             }
             return;
         }
