@@ -2737,7 +2737,6 @@ body[data-theme="dark"] .search-result-badge.field-badge {
 }
 
 /* Ensure PDF text layer stays selectable and aligned */
-/* Ensure PDF text selection uses true highlight colors */
 .pdf-text-layer {
     position: absolute;
     top: 0;
@@ -2768,11 +2767,23 @@ body[data-theme="dark"] .search-result-badge.field-badge {
 }
 
 .pdf-text-layer ::selection {
-    background: var(--pdf-selection-color, rgba(255, 235, 59, 0.4));
+    background: rgba(255, 235, 59, 0.4);
 }
 
-.pdf-text-layer ::-moz-selection {
-    background: var(--pdf-selection-color, rgba(255, 235, 59, 0.4));
+.pdf-viewer-modal.selection-color-yellow .pdf-text-layer ::selection {
+    background: rgba(255, 235, 59, 0.4);
+}
+
+.pdf-viewer-modal.selection-color-green .pdf-text-layer ::selection {
+    background: rgba(129, 199, 132, 0.4);
+}
+
+.pdf-viewer-modal.selection-color-blue .pdf-text-layer ::selection {
+    background: rgba(100, 181, 246, 0.4);
+}
+
+.pdf-viewer-modal.selection-color-red .pdf-text-layer ::selection {
+    background: rgba(239, 83, 80, 0.4);
 }
 
 .pdf-highlight-layer {
