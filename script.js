@@ -263,7 +263,13 @@ function showSummary() {
                             ${hasPDFAvailable(paper) ?
                                 `<button class="btn-open-pdf" data-paper-id="${paper.id}" title="Open PDF">📄 Open</button>
                                  ${paper.hasPDF ? `<button class="btn-remove-pdf-small" data-paper-id="${paper.id}" title="Remove PDF">✕</button>` : ''}` :
-                                `<button class="btn-attach-pdf" data-paper-id="${paper.id}" title="Attach PDF file">📎 Attach PDF</button>`
+                                `<div class="pdf-attach-dropdown">
+                                    <button class="btn-attach-pdf" data-paper-id="${paper.id}" title="Attach PDF">📎 Attach PDF ▼</button>
+                                    <div class="pdf-attach-menu" id="attach-dropdown-${paper.id}">
+                                        <button class="pdf-attach-option" data-paper-id="${paper.id}" data-action="file">📁 From File</button>
+                                        <button class="pdf-attach-option" data-paper-id="${paper.id}" data-action="url">🔗 From URL</button>
+                                    </div>
+                                </div>`
                             }
                         </div>
                         <button class="copy-citation-card-btn" data-paper-id="${paper.id}" title="Copy citation to clipboard">📋 Copy Citation</button>
@@ -1173,6 +1179,61 @@ async function attachPDF(paperId) {
     }
 }
 
+// Attach PDF from URL
+function attachPDFFromURL(paperId) {
+    const paper = papers.find(p => p.id === paperId);
+    if (!paper) return;
+
+    const url = prompt('Enter PDF URL:', paper.pdf || '');
+    if (url === null) return; // User cancelled
+
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+        // User cleared the URL - remove PDF URL
+        paper.pdf = '';
+        updatePaperUI(paperId);
+        storage.save();
+        showSummary();
+        return;
+    }
+
+    // Validate URL
+    const validatedUrl = validateUrl(trimmedUrl);
+    if (!validatedUrl) {
+        alert('Invalid URL. Please enter a valid http or https URL.');
+        return;
+    }
+
+    // Save the PDF URL
+    paper.pdf = validatedUrl;
+
+    // Update UI
+    updatePaperUI(paperId);
+    storage.save();
+
+    // Refresh summary to update PDF controls
+    showSummary();
+
+    console.log(`PDF URL set: ${paper.pdf}`);
+}
+
+// Toggle PDF attach dropdown
+function togglePDFAttachDropdown(paperId) {
+    // Close all other attach dropdowns first
+    const allDropdowns = document.querySelectorAll('.pdf-attach-menu');
+    allDropdowns.forEach(dropdown => {
+        if (dropdown.id !== `attach-dropdown-${paperId}`) {
+            dropdown.classList.remove('show');
+        }
+    });
+
+    // Toggle the clicked dropdown
+    const dropdown = document.getElementById(`attach-dropdown-${paperId}`);
+    if (dropdown) {
+        dropdown.classList.toggle('show');
+    }
+}
+
 async function openPDF(paperId) {
     try {
         const paper = papers.find(p => p.id === paperId);
@@ -1358,7 +1419,13 @@ function updateSummaryCardPDF(card, paperId) {
         pdfCardControls.innerHTML = hasPDF ?
             `<button class="btn-open-pdf" data-paper-id="${paperId}" title="Open PDF">📄 Open</button>
              ${paper.hasPDF ? `<button class="btn-remove-pdf-small" data-paper-id="${paperId}" title="Remove PDF">✕</button>` : ''}` :
-            `<button class="btn-attach-pdf" data-paper-id="${paperId}" title="Attach PDF file">📎 Attach PDF</button>`;
+            `<div class="pdf-attach-dropdown">
+                <button class="btn-attach-pdf" data-paper-id="${paperId}" title="Attach PDF">📎 Attach PDF ▼</button>
+                <div class="pdf-attach-menu" id="attach-dropdown-${paperId}">
+                    <button class="pdf-attach-option" data-paper-id="${paperId}" data-action="file">📁 From File</button>
+                    <button class="pdf-attach-option" data-paper-id="${paperId}" data-action="url">🔗 From URL</button>
+                </div>
+            </div>`;
     }
 
     const actionsContainer = card.querySelector('.paper-card-actions');
@@ -4088,12 +4155,33 @@ function setupSummaryEventDelegation() {
             return;
         }
 
-        // Handle PDF attach button clicks
+        // Handle PDF attach button clicks (toggle dropdown)
         if (target.classList.contains('btn-attach-pdf')) {
             event.stopPropagation();
             const paperId = parseInt(target.getAttribute('data-paper-id'));
             if (paperId) {
-                attachPDF(paperId);
+                togglePDFAttachDropdown(paperId);
+            }
+            return;
+        }
+
+        // Handle PDF attach option clicks (from file or URL)
+        if (target.classList.contains('pdf-attach-option')) {
+            event.stopPropagation();
+            const paperId = parseInt(target.getAttribute('data-paper-id'));
+            const action = target.getAttribute('data-action');
+            if (paperId && action) {
+                // Close the dropdown
+                const dropdown = document.getElementById(`attach-dropdown-${paperId}`);
+                if (dropdown) {
+                    dropdown.classList.remove('show');
+                }
+                // Handle the action
+                if (action === 'file') {
+                    attachPDF(paperId);
+                } else if (action === 'url') {
+                    attachPDFFromURL(paperId);
+                }
             }
             return;
         }
@@ -4131,10 +4219,17 @@ function setupSummaryEventDelegation() {
 
     // Global click handler to close dropdowns when clicking outside
     document.addEventListener('click', function(event) {
-        // Don't close if clicking inside a dropdown
+        // Don't close paper-open dropdowns if clicking inside them
         if (!event.target.closest('.paper-open-dropdown')) {
             const allDropdowns = document.querySelectorAll('.paper-open-menu');
             allDropdowns.forEach(dropdown => {
+                dropdown.classList.remove('show');
+            });
+        }
+        // Don't close pdf-attach dropdowns if clicking inside them
+        if (!event.target.closest('.pdf-attach-dropdown')) {
+            const allAttachDropdowns = document.querySelectorAll('.pdf-attach-menu');
+            allAttachDropdowns.forEach(dropdown => {
                 dropdown.classList.remove('show');
             });
         }
