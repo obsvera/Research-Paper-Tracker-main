@@ -2518,6 +2518,7 @@ body[data-theme="dark"] .search-result-badge.field-badge {
     display: none;
     align-items: center;
     justify-content: center;
+    --pdf-selection-color: rgba(255, 235, 59, 0.4);
 }
 
 .pdf-viewer-modal.open {

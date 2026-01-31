@@ -153,6 +153,7 @@
         }
 
         createViewerModal();
+        updateSelectionColorClass(selectedColor);
         const modal = document.getElementById('pdf-viewer-modal');
         modal.classList.add('open');
         document.body.style.overflow = 'hidden';
