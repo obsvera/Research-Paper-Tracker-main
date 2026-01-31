@@ -3877,9 +3877,6 @@ function initializeEventListeners() {
         document.getElementById('bibtexImport').click();
     });
     
-    // Utility buttons
-    document.getElementById('clearDataBtn').addEventListener('click', clearData);
-
     // Import handlers
     document.getElementById('csvImport').addEventListener('change', importCSV);
     document.getElementById('jsonImport').addEventListener('change', importJSON);
@@ -4426,6 +4423,11 @@ function showSettingsModal() {
                     </div>
                 </div>
             </div>
+            <div class="settings-section danger-zone">
+                <h4 class="settings-section-title">Data Management</h4>
+                <p class="danger-warning">This action cannot be undone. All papers will be permanently deleted.</p>
+                <button class="btn btn-danger" id="settingsClearAllBtn">🗑️ Clear All Papers</button>
+            </div>
         </div>
     `;
     
@@ -4435,6 +4437,10 @@ function showSettingsModal() {
     document.getElementById('settingsCloseBtn').addEventListener('click', closeSettingsModal);
     document.getElementById('selectFolderBtn').addEventListener('click', handleSelectFolder);
     document.getElementById('clearFolderBtn').addEventListener('click', handleClearFolder);
+    document.getElementById('settingsClearAllBtn').addEventListener('click', function() {
+        closeSettingsModal();
+        clearData();
+    });
 
     // Validate and persist the CrossRef mailto setting for polite pool requests.
     const crossRefMailtoInput = document.getElementById('crossRefMailtoInput');
