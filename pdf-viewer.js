@@ -11,8 +11,8 @@
     const HIGHLIGHT_COLORS = {
         yellow: { hex: '#ffeb3b', name: 'Yellow' },
         green: { hex: '#81c784', name: 'Green' },
-        pink: { hex: '#f48fb1', name: 'Pink' },
-        blue: { hex: '#64b5f6', name: 'Blue' }
+        blue: { hex: '#64b5f6', name: 'Blue' },
+        red: { hex: '#ef5350', name: 'Red' }
     };
 
     // Module state
@@ -67,10 +67,10 @@
                 <div class="pdf-viewer-body">
                     <div class="pdf-highlight-toolbar">
                         <span class="toolbar-label">Highlight:</span>
-                        <button class="highlight-color-btn selected" data-color="yellow" style="background-color: #ffeb3b;" title="Yellow"></button>
-                        <button class="highlight-color-btn" data-color="green" style="background-color: #81c784;" title="Green"></button>
-                        <button class="highlight-color-btn" data-color="pink" style="background-color: #f48fb1;" title="Pink"></button>
-                        <button class="highlight-color-btn" data-color="blue" style="background-color: #64b5f6;" title="Blue"></button>
+                        <button class="highlight-color-btn selected color-yellow" data-color="yellow" title="Yellow"></button>
+                        <button class="highlight-color-btn color-green" data-color="green" title="Green"></button>
+                        <button class="highlight-color-btn color-blue" data-color="blue" title="Blue"></button>
+                        <button class="highlight-color-btn color-red" data-color="red" title="Red"></button>
                         <span class="toolbar-separator"></span>
                         <button id="btn-add-highlight" class="pdf-action-btn" title="Add Highlight from Selection">✨ Highlight Selection</button>
                     </div>
@@ -93,6 +93,7 @@
         `;
         document.body.appendChild(modal);
         attachViewerEventListeners();
+        updateSelectionColorClass(selectedColor);
     }
 
     // Attach event listeners to the viewer
@@ -129,6 +130,7 @@
                 document.querySelectorAll('.highlight-color-btn').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
                 selectedColor = btn.dataset.color;
+                updateSelectionColorClass(selectedColor);
             });
         });
 
