@@ -29,6 +29,33 @@
     // Cache the latest text selection so button clicks can still highlight
     let lastSelection = null;
 
+    // Convert hex color to rgba for selection overlay
+    function hexToRgba(hex, alpha) {
+        if (!hex || typeof hex !== 'string') {
+            return `rgba(255, 235, 59, ${alpha})`;
+        }
+
+        const normalized = hex.replace('#', '').trim();
+        if (normalized.length !== 6) {
+            return `rgba(255, 235, 59, ${alpha})`;
+        }
+
+        const r = parseInt(normalized.slice(0, 2), 16);
+        const g = parseInt(normalized.slice(2, 4), 16);
+        const b = parseInt(normalized.slice(4, 6), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    // Keep selection highlight color in sync with the chosen highlighter
+    function updateSelectionColorClass(colorKey) {
+        const modal = document.getElementById('pdf-viewer-modal');
+        if (!modal) return;
+
+        const highlightColor = HIGHLIGHT_COLORS[colorKey] || HIGHLIGHT_COLORS.yellow;
+        const selectionColor = hexToRgba(highlightColor.hex, 0.4);
+        modal.style.setProperty('--pdf-selection-color', selectionColor);
+    }
+
     // Initialize PDF.js worker
     function initPDFJS() {
         if (typeof pdfjsLib !== 'undefined') {
