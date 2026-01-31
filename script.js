@@ -212,6 +212,11 @@ function showSummary() {
                     </div>
                     <div class="paper-header-controls">
                         <button class="collapse-toggle" data-paper-id="${paper.id}" title="Click to expand/collapse">▼</button>
+                        ${(paper.annotations && paper.annotations.length > 0) ?
+                            `<span class="annotation-badge" onclick="openPDF(${paper.id})" title="${paper.annotations.length} annotation${paper.annotations.length !== 1 ? 's' : ''} - Click to view">
+                                <span class="annotation-badge-icon">📝</span>${paper.annotations.length}
+                            </span>` : ''
+                        }
                         <div class="pdf-indicator-collapsed">
                             ${paper.hasPDF ?
                                 `<span class="pdf-badge-small" data-paper-id="${paper.id}" onclick="openPDF(${paper.id})" title="Click to open PDF">📄</span>` :
@@ -314,7 +319,8 @@ function addRow() {
             pdfFilename: "",
             hasPDF: false,
             pdfSource: "none",
-            pdfBlobUrl: null
+            pdfBlobUrl: null,
+            annotations: [] // PDF annotations (highlights, notes)
         };
         papers.push(newPaper);
         batchUpdates(newPaper.id);  // Pass ID for incremental row update
@@ -1233,6 +1239,16 @@ async function openPDF(paperId) {
         const paper = papers.find(p => p.id === paperId);
         if (!paper) return;
 
+        // Check if PDF viewer is available and PDF.js is loaded
+        if (typeof openPDFViewer === 'function' && typeof pdfjsLib !== 'undefined') {
+            // Use the embedded PDF viewer with highlighting support
+            if (paper.hasPDF || getPDFUrl(paper)) {
+                openPDFViewer(paperId);
+                return;
+            }
+        }
+
+        // Fallback to opening in new tab if viewer not available
         if (paper.hasPDF) {
             if (paper.pdfSource === "folder" && papersFolderHandle) {
                 // Try to open from papers folder
@@ -1243,7 +1259,7 @@ async function openPDF(paperId) {
                     const file = await fileHandle.getFile();
                     const url = URL.createObjectURL(file);
                     window.open(url, '_blank');
-                    
+
                     // Clean up the URL after a delay
                     setTimeout(() => URL.revokeObjectURL(url), 10000);
                 } catch (error) {
@@ -1256,7 +1272,7 @@ async function openPDF(paperId) {
                     const file = await paper.pdfHandle.getFile();
                     const url = URL.createObjectURL(file);
                     window.open(url, '_blank');
-                    
+
                     // Clean up the URL after a delay
                     setTimeout(() => URL.revokeObjectURL(url), 10000);
                 } else if (paper.pdfBlobUrl) {
@@ -1671,35 +1687,43 @@ async function tryRestorePDFFromPath(paper) {
 }
 
 function exportToCSV() {
-    const headers = ['Item Type', 'Title', 'Authors', 'Year', 'Keywords', 'Journal/Venue', 'Volume', 'Issue', 'Pages', 'DOI/URL', 'ISSN', 'Chapter/Topic', 'Abstract', 'Relevance', 'Status', 'Priority', 'Rating', 'Date Added', 'Key Points', 'Notes', 'Language', 'Citation', 'PDF'];
-    
+    const headers = ['Item Type', 'Title', 'Authors', 'Year', 'Keywords', 'Journal/Venue', 'Volume', 'Issue', 'Pages', 'DOI/URL', 'ISSN', 'Chapter/Topic', 'Abstract', 'Relevance', 'Status', 'Priority', 'Rating', 'Date Added', 'Key Points', 'Notes', 'Language', 'Citation', 'PDF', 'Annotations Count', 'Annotations'];
+
     const csvContent = [
         headers.join(','),
-        ...papers.map(paper => [
-            paper.itemType || 'article',
-            `"${(paper.title || '').replace(/"/g, '""')}"`,
-            `"${(paper.authors || '').replace(/"/g, '""')}"`,
-            paper.year || '',
-            `"${(paper.keywords || '').replace(/"/g, '""')}"`,
-            `"${(paper.journal || '').replace(/"/g, '""')}"`,
-            paper.volume || '',
-            paper.issue || '',
-            paper.pages || '',
-            `"${(paper.doi || '').replace(/"/g, '""')}"`,
-            paper.issn || '',
-            `"${(paper.chapter || '').replace(/"/g, '""')}"`,
-            `"${(paper.abstract || '').replace(/"/g, '""')}"`,
-            `"${(paper.relevance || '').replace(/"/g, '""')}"`,
-            paper.status || '',
-            paper.priority || '',
-            paper.rating || '',
-            paper.dateAdded || '',
-            `"${(paper.keyPoints || '').replace(/"/g, '""')}"`,
-            `"${(paper.notes || '').replace(/"/g, '""')}"`,
-            paper.language || 'en',
-            `"${(paper.citation || '').replace(/"/g, '""')}"`,
-            `"${(paper.pdf || '').replace(/"/g, '""')}"`
-        ].join(','))
+        ...papers.map(paper => {
+            const annotationCount = (paper.annotations && paper.annotations.length) || 0;
+            const annotationsText = typeof formatAnnotationsForExport === 'function'
+                ? formatAnnotationsForExport(paper.annotations)
+                : '';
+            return [
+                paper.itemType || 'article',
+                `"${(paper.title || '').replace(/"/g, '""')}"`,
+                `"${(paper.authors || '').replace(/"/g, '""')}"`,
+                paper.year || '',
+                `"${(paper.keywords || '').replace(/"/g, '""')}"`,
+                `"${(paper.journal || '').replace(/"/g, '""')}"`,
+                paper.volume || '',
+                paper.issue || '',
+                paper.pages || '',
+                `"${(paper.doi || '').replace(/"/g, '""')}"`,
+                paper.issn || '',
+                `"${(paper.chapter || '').replace(/"/g, '""')}"`,
+                `"${(paper.abstract || '').replace(/"/g, '""')}"`,
+                `"${(paper.relevance || '').replace(/"/g, '""')}"`,
+                paper.status || '',
+                paper.priority || '',
+                paper.rating || '',
+                paper.dateAdded || '',
+                `"${(paper.keyPoints || '').replace(/"/g, '""')}"`,
+                `"${(paper.notes || '').replace(/"/g, '""')}"`,
+                paper.language || 'en',
+                `"${(paper.citation || '').replace(/"/g, '""')}"`,
+                `"${(paper.pdf || '').replace(/"/g, '""')}"`,
+                annotationCount,
+                `"${annotationsText.replace(/"/g, '""')}"`
+            ].join(',');
+        })
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1752,7 +1776,9 @@ function exportToJSON() {
             pdfPath: paper.pdfPath || '',
             pdfFilename: paper.pdfFilename || '',
             hasPDF: paper.hasPDF || false,
-            pdfSource: paper.pdfSource || 'none'
+            pdfSource: paper.pdfSource || 'none',
+            // PDF annotations
+            annotations: paper.annotations || []
         }))
     };
 
@@ -2159,7 +2185,9 @@ function importJSON(event) {
                     pdfPath: paperData.pdf ? (paperData.pdf.path || '') : (paperData.pdfPath || ''),
                     pdfFilename: paperData.pdf ? (paperData.pdf.filename || '') : (paperData.pdfFilename || ''),
                     pdfBlobUrl: null,
-                    pdfHandle: null
+                    pdfHandle: null,
+                    // PDF annotations
+                    annotations: Array.isArray(paperData.annotations) ? paperData.annotations : []
                 };
                 
                 // Try to restore PDF if file path exists
