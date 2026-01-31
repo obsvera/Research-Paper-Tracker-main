@@ -213,7 +213,7 @@ function showSummary() {
                     <div class="paper-header-controls">
                         <button class="collapse-toggle" data-paper-id="${paper.id}" title="Click to expand/collapse">▼</button>
                         <div class="pdf-indicator-collapsed">
-                            ${hasPDFAvailable(paper) ?
+                            ${paper.hasPDF ?
                                 `<span class="pdf-badge-small" data-paper-id="${paper.id}" onclick="openPDF(${paper.id})" title="Click to open PDF">📄</span>` :
                                 `<span class="pdf-badge-small inactive" title="No PDF attached">📎</span>`
                             }
@@ -260,10 +260,10 @@ function showSummary() {
                             </div>
                         ` : ''}
                         <div class="pdf-card-controls">
-                            ${hasPDFAvailable(paper) ?
+                            ${!paper.hasPDF ?
+                                `<button class="btn-attach-pdf" data-paper-id="${paper.id}" title="Attach PDF file">📎 Attach PDF</button>` :
                                 `<button class="btn-open-pdf" data-paper-id="${paper.id}" title="Open PDF">📄 Open</button>
-                                 ${paper.hasPDF ? `<button class="btn-remove-pdf-small" data-paper-id="${paper.id}" title="Remove PDF">✕</button>` : ''}` :
-                                `<button class="btn-attach-pdf" data-paper-id="${paper.id}" title="Attach PDF file">📎 Attach PDF</button>`
+                                 <button class="btn-remove-pdf-small" data-paper-id="${paper.id}" title="Remove PDF">✕</button>`
                             }
                         </div>
                         <button class="copy-citation-card-btn" data-paper-id="${paper.id}" title="Copy citation to clipboard">📋 Copy Citation</button>
@@ -1342,12 +1342,10 @@ function updateSummaryCardPDF(card, paperId) {
     const paper = papers.find(p => p.id === paperId);
     if (!paper) return;
 
-    const hasPDF = hasPDFAvailable(paper);
-
     // Update collapsed view PDF indicator
     const pdfIndicatorCollapsed = card.querySelector('.pdf-indicator-collapsed');
     if (pdfIndicatorCollapsed) {
-        pdfIndicatorCollapsed.innerHTML = hasPDF ?
+        pdfIndicatorCollapsed.innerHTML = paper.hasPDF ?
             `<span class="pdf-badge-small" data-paper-id="${paperId}" onclick="openPDF(${paperId})" title="Click to open PDF">📄</span>` :
             `<span class="pdf-badge-small inactive" title="No PDF attached">📎</span>`;
     }
@@ -1355,10 +1353,10 @@ function updateSummaryCardPDF(card, paperId) {
     // Update expanded view PDF controls
     const pdfCardControls = card.querySelector('.pdf-card-controls');
     if (pdfCardControls) {
-        pdfCardControls.innerHTML = hasPDF ?
+        pdfCardControls.innerHTML = !paper.hasPDF ?
+            `<button class="btn-attach-pdf" data-paper-id="${paperId}" title="Attach PDF file">📎 Attach PDF</button>` :
             `<button class="btn-open-pdf" data-paper-id="${paperId}" title="Open PDF">📄 Open</button>
-             ${paper.hasPDF ? `<button class="btn-remove-pdf-small" data-paper-id="${paperId}" title="Remove PDF">✕</button>` : ''}` :
-            `<button class="btn-attach-pdf" data-paper-id="${paperId}" title="Attach PDF file">📎 Attach PDF</button>`;
+             <button class="btn-remove-pdf-small" data-paper-id="${paperId}" title="Remove PDF">✕</button>`;
     }
 
     const actionsContainer = card.querySelector('.paper-card-actions');
