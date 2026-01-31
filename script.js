@@ -155,23 +155,6 @@ function validateUrl(url) {
     }
 }
 
-// Check if paper has PDF available (attached file OR URL)
-function hasPDFAvailable(paper) {
-    if (!paper) return false;
-    // Check for attached PDF file
-    if (paper.hasPDF) return true;
-    // Check for PDF URL
-    const pdfUrl = validateUrl(paper.pdf);
-    if (pdfUrl) return true;
-    return false;
-}
-
-// Get PDF URL if available (for papers with pdf field set)
-function getPDFUrl(paper) {
-    if (!paper) return null;
-    return validateUrl(paper.pdf);
-}
-
 // Summary function
 function showSummary() {
     const summaryContainer = document.getElementById('papersSummary');
@@ -210,20 +193,7 @@ function showSummary() {
                         </div>
                         ${paper.authors ? `<div class="paper-authors">${escapeHtml(paper.authors)}</div>` : ''}
                     </div>
-                    <div class="paper-header-controls">
-                        <button class="collapse-toggle" data-paper-id="${paper.id}" title="Click to expand/collapse">▼</button>
-                        ${(paper.annotations && paper.annotations.length > 0) ?
-                            `<span class="annotation-badge" data-paper-id="${paper.id}" title="${paper.annotations.length} annotation${paper.annotations.length !== 1 ? 's' : ''} - Click to view">
-                                <span class="annotation-badge-icon">📝</span>${paper.annotations.length}
-                            </span>` : ''
-                        }
-                        <div class="pdf-indicator-collapsed">
-                            ${paper.hasPDF ?
-                                `<span class="pdf-badge-small" data-paper-id="${paper.id}" title="Click to open PDF">📄</span>` :
-                                `<span class="pdf-badge-small inactive" title="No PDF attached">📎</span>`
-                            }
-                        </div>
-                    </div>
+                    <button class="collapse-toggle" data-paper-id="${paper.id}" title="Click to expand/collapse">▼</button>
                 </div>
 
                 <div class="collapsible-content">
@@ -255,22 +225,15 @@ function showSummary() {
                     <div class="paper-card-actions">
                         <button class="edit-card-btn" data-paper-id="${paper.id}" title="Edit this paper">✏️ Edit</button>
                         <button class="delete-card-btn" data-paper-id="${paper.id}" title="Delete this paper">🗑️ Delete</button>
-                        ${paperUrl || hasPDFAvailable(paper) ? `
+                        ${paperUrl || paper.hasPDF ? `
                             <div class="paper-open-dropdown">
                                 <button class="paper-open-btn" data-paper-id="${paper.id}" title="Open paper options">📖 Open Paper ▼</button>
                                 <div class="paper-open-menu" id="dropdown-${paper.id}">
                                     ${paperUrl ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="online">🌐 Open Online</button>` : ''}
-                                    ${hasPDFAvailable(paper) ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="pdf">📄 Open PDF</button>` : ''}
+                                    ${paper.hasPDF ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="pdf">📄 Open PDF</button>` : ''}
                                 </div>
                             </div>
                         ` : ''}
-                        <div class="pdf-card-controls">
-                            ${!paper.hasPDF ?
-                                `<button class="btn-attach-pdf" data-paper-id="${paper.id}" title="Attach PDF file">📎 Attach PDF</button>` :
-                                `<button class="btn-open-pdf" data-paper-id="${paper.id}" title="Open PDF">📄 Open</button>
-                                 <button class="btn-remove-pdf-small" data-paper-id="${paper.id}" title="Remove PDF">✕</button>`
-                            }
-                        </div>
                         <button class="copy-citation-card-btn" data-paper-id="${paper.id}" title="Copy citation to clipboard">📋 Copy Citation</button>
                     </div>
                 </div>
@@ -319,8 +282,7 @@ function addRow() {
             pdfFilename: "",
             hasPDF: false,
             pdfSource: "none",
-            pdfBlobUrl: null,
-            annotations: [] // PDF annotations (highlights, notes)
+            pdfBlobUrl: null
         };
         papers.push(newPaper);
         batchUpdates(newPaper.id);  // Pass ID for incremental row update
@@ -1179,76 +1141,11 @@ async function attachPDF(paperId) {
     }
 }
 
-// Attach PDF from URL
-function attachPDFFromURL(paperId) {
-    const paper = papers.find(p => p.id === paperId);
-    if (!paper) return;
-
-    const url = prompt('Enter PDF URL:', paper.pdf || '');
-    if (url === null) return; // User cancelled
-
-    const trimmedUrl = url.trim();
-    if (!trimmedUrl) {
-        // User cleared the URL - remove PDF URL
-        paper.pdf = '';
-        updatePaperUI(paperId);
-        storage.save();
-        showSummary();
-        return;
-    }
-
-    // Validate URL
-    const validatedUrl = validateUrl(trimmedUrl);
-    if (!validatedUrl) {
-        alert('Invalid URL. Please enter a valid http or https URL.');
-        return;
-    }
-
-    // Save the PDF URL
-    paper.pdf = validatedUrl;
-
-    // Update UI
-    updatePaperUI(paperId);
-    storage.save();
-
-    // Refresh summary to update PDF controls
-    showSummary();
-
-    console.log(`PDF URL set: ${paper.pdf}`);
-}
-
-// Toggle PDF attach dropdown
-function togglePDFAttachDropdown(paperId) {
-    // Close all other attach dropdowns first
-    const allDropdowns = document.querySelectorAll('.pdf-attach-menu');
-    allDropdowns.forEach(dropdown => {
-        if (dropdown.id !== `attach-dropdown-${paperId}`) {
-            dropdown.classList.remove('show');
-        }
-    });
-
-    // Toggle the clicked dropdown
-    const dropdown = document.getElementById(`attach-dropdown-${paperId}`);
-    if (dropdown) {
-        dropdown.classList.toggle('show');
-    }
-}
-
 async function openPDF(paperId) {
     try {
         const paper = papers.find(p => p.id === paperId);
         if (!paper) return;
 
-        // Check if PDF viewer is available and PDF.js is loaded
-        if (typeof openPDFViewer === 'function' && typeof pdfjsLib !== 'undefined') {
-            // Use the embedded PDF viewer with highlighting support
-            if (paper.hasPDF || getPDFUrl(paper)) {
-                openPDFViewer(paperId);
-                return;
-            }
-        }
-
-        // Fallback to opening in new tab if viewer not available
         if (paper.hasPDF) {
             if (paper.pdfSource === "folder" && papersFolderHandle) {
                 // Try to open from papers folder
@@ -1259,7 +1156,7 @@ async function openPDF(paperId) {
                     const file = await fileHandle.getFile();
                     const url = URL.createObjectURL(file);
                     window.open(url, '_blank');
-
+                    
                     // Clean up the URL after a delay
                     setTimeout(() => URL.revokeObjectURL(url), 10000);
                 } catch (error) {
@@ -1272,7 +1169,7 @@ async function openPDF(paperId) {
                     const file = await paper.pdfHandle.getFile();
                     const url = URL.createObjectURL(file);
                     window.open(url, '_blank');
-
+                    
                     // Clean up the URL after a delay
                     setTimeout(() => URL.revokeObjectURL(url), 10000);
                 } else if (paper.pdfBlobUrl) {
@@ -1314,17 +1211,14 @@ async function openPDF(paperId) {
             } else {
                 alert('PDF file not accessible. Please reattach the PDF.');
             }
+        } else if (paper.doi && (paper.doi.includes('.pdf') || paper.doi.includes('pdf'))) {
+            // Open online PDF
+            window.open(paper.doi, '_blank', 'noopener,noreferrer');
+        } else if (paper.doi) {
+            // Try to open DOI/URL
+            window.open(paper.doi, '_blank', 'noopener,noreferrer');
         } else {
-            // Check for PDF URL in the pdf field
-            const pdfUrl = getPDFUrl(paper);
-            if (pdfUrl) {
-                window.open(pdfUrl, '_blank', 'noopener,noreferrer');
-            } else if (paper.doi && (paper.doi.includes('.pdf') || paper.doi.includes('pdf'))) {
-                // Open online PDF from DOI
-                window.open(paper.doi, '_blank', 'noopener,noreferrer');
-            } else {
-                alert('No PDF available for this paper.');
-            }
+            alert('No PDF available for this paper.');
         }
     } catch (error) {
         console.error('Error opening PDF:', error);
@@ -1412,25 +1306,6 @@ function updatePDFCellContent(cell, paperId) {
 function updateSummaryCardPDF(card, paperId) {
     const paper = papers.find(p => p.id === paperId);
     if (!paper) return;
-    // Track whether a PDF is available from file or URL
-    const hasPDF = hasPDFAvailable(paper);
-
-    // Update collapsed view PDF indicator
-    const pdfIndicatorCollapsed = card.querySelector('.pdf-indicator-collapsed');
-    if (pdfIndicatorCollapsed) {
-        pdfIndicatorCollapsed.innerHTML = paper.hasPDF ?
-            `<span class="pdf-badge-small" data-paper-id="${paperId}" title="Click to open PDF">📄</span>` :
-            `<span class="pdf-badge-small inactive" title="No PDF attached">📎</span>`;
-    }
-
-    // Update expanded view PDF controls
-    const pdfCardControls = card.querySelector('.pdf-card-controls');
-    if (pdfCardControls) {
-        pdfCardControls.innerHTML = !paper.hasPDF ?
-            `<button class="btn-attach-pdf" data-paper-id="${paperId}" title="Attach PDF file">📎 Attach PDF</button>` :
-            `<button class="btn-open-pdf" data-paper-id="${paperId}" title="Open PDF">📄 Open</button>
-             <button class="btn-remove-pdf-small" data-paper-id="${paperId}" title="Remove PDF">✕</button>`;
-    }
 
     const actionsContainer = card.querySelector('.paper-card-actions');
     if (!actionsContainer) return;
@@ -1443,32 +1318,27 @@ function updateSummaryCardPDF(card, paperId) {
 
     // Always recreate the dropdown if there's a URL or PDF
     const paperUrl = validateUrl(paper.doi);
-    if (paperUrl || hasPDF) {
+    if (paperUrl || paper.hasPDF) {
         const dropdownHTML = `
             <div class="paper-open-dropdown">
                 <button class="paper-open-btn" data-paper-id="${paperId}" title="Open paper options">📖 Open Paper ▼</button>
                 <div class="paper-open-menu" id="dropdown-${paperId}">
                     ${paperUrl ? `<button class="paper-open-option" data-paper-id="${paperId}" data-action="online">🌐 Open Online</button>` : ''}
-                    ${hasPDF ? `<button class="paper-open-option" data-paper-id="${paperId}" data-action="pdf">📄 Open PDF</button>` : ''}
+                    ${paper.hasPDF ? `<button class="paper-open-option" data-paper-id="${paperId}" data-action="pdf">📄 Open PDF</button>` : ''}
                 </div>
             </div>
         `;
-
-        // Insert before the PDF card controls
-        const pdfControls = actionsContainer.querySelector('.pdf-card-controls');
-        if (pdfControls) {
-            pdfControls.insertAdjacentHTML('beforebegin', dropdownHTML);
+        
+        // Insert before the copy citation button
+        const copyBtn = actionsContainer.querySelector('.copy-citation-card-btn');
+        if (copyBtn) {
+            copyBtn.insertAdjacentHTML('beforebegin', dropdownHTML);
         } else {
-            // Fallback: insert before the copy citation button
-            const copyBtn = actionsContainer.querySelector('.copy-citation-card-btn');
-            if (copyBtn) {
-                copyBtn.insertAdjacentHTML('beforebegin', dropdownHTML);
-            } else {
-                actionsContainer.insertAdjacentHTML('beforeend', dropdownHTML);
-            }
+            actionsContainer.insertAdjacentHTML('beforeend', dropdownHTML);
         }
-
-        // Event delegation handles dropdown interactions globally
+        
+        // Reattach event listeners for the new dropdown
+        attachDropdownEventListeners(actionsContainer);
     } else {
         // If no URL and no PDF, ensure we don't have any leftover dropdown
         const remainingDropdown = actionsContainer.querySelector('.paper-open-dropdown');
@@ -1688,43 +1558,35 @@ async function tryRestorePDFFromPath(paper) {
 }
 
 function exportToCSV() {
-    const headers = ['Item Type', 'Title', 'Authors', 'Year', 'Keywords', 'Journal/Venue', 'Volume', 'Issue', 'Pages', 'DOI/URL', 'ISSN', 'Chapter/Topic', 'Abstract', 'Relevance', 'Status', 'Priority', 'Rating', 'Date Added', 'Key Points', 'Notes', 'Language', 'Citation', 'PDF', 'Annotations Count', 'Annotations'];
-
+    const headers = ['Item Type', 'Title', 'Authors', 'Year', 'Keywords', 'Journal/Venue', 'Volume', 'Issue', 'Pages', 'DOI/URL', 'ISSN', 'Chapter/Topic', 'Abstract', 'Relevance', 'Status', 'Priority', 'Rating', 'Date Added', 'Key Points', 'Notes', 'Language', 'Citation', 'PDF'];
+    
     const csvContent = [
         headers.join(','),
-        ...papers.map(paper => {
-            const annotationCount = (paper.annotations && paper.annotations.length) || 0;
-            const annotationsText = typeof formatAnnotationsForExport === 'function'
-                ? formatAnnotationsForExport(paper.annotations)
-                : '';
-            return [
-                paper.itemType || 'article',
-                `"${(paper.title || '').replace(/"/g, '""')}"`,
-                `"${(paper.authors || '').replace(/"/g, '""')}"`,
-                paper.year || '',
-                `"${(paper.keywords || '').replace(/"/g, '""')}"`,
-                `"${(paper.journal || '').replace(/"/g, '""')}"`,
-                paper.volume || '',
-                paper.issue || '',
-                paper.pages || '',
-                `"${(paper.doi || '').replace(/"/g, '""')}"`,
-                paper.issn || '',
-                `"${(paper.chapter || '').replace(/"/g, '""')}"`,
-                `"${(paper.abstract || '').replace(/"/g, '""')}"`,
-                `"${(paper.relevance || '').replace(/"/g, '""')}"`,
-                paper.status || '',
-                paper.priority || '',
-                paper.rating || '',
-                paper.dateAdded || '',
-                `"${(paper.keyPoints || '').replace(/"/g, '""')}"`,
-                `"${(paper.notes || '').replace(/"/g, '""')}"`,
-                paper.language || 'en',
-                `"${(paper.citation || '').replace(/"/g, '""')}"`,
-                `"${(paper.pdf || '').replace(/"/g, '""')}"`,
-                annotationCount,
-                `"${annotationsText.replace(/"/g, '""')}"`
-            ].join(',');
-        })
+        ...papers.map(paper => [
+            paper.itemType || 'article',
+            `"${(paper.title || '').replace(/"/g, '""')}"`,
+            `"${(paper.authors || '').replace(/"/g, '""')}"`,
+            paper.year || '',
+            `"${(paper.keywords || '').replace(/"/g, '""')}"`,
+            `"${(paper.journal || '').replace(/"/g, '""')}"`,
+            paper.volume || '',
+            paper.issue || '',
+            paper.pages || '',
+            `"${(paper.doi || '').replace(/"/g, '""')}"`,
+            paper.issn || '',
+            `"${(paper.chapter || '').replace(/"/g, '""')}"`,
+            `"${(paper.abstract || '').replace(/"/g, '""')}"`,
+            `"${(paper.relevance || '').replace(/"/g, '""')}"`,
+            paper.status || '',
+            paper.priority || '',
+            paper.rating || '',
+            paper.dateAdded || '',
+            `"${(paper.keyPoints || '').replace(/"/g, '""')}"`,
+            `"${(paper.notes || '').replace(/"/g, '""')}"`,
+            paper.language || 'en',
+            `"${(paper.citation || '').replace(/"/g, '""')}"`,
+            `"${(paper.pdf || '').replace(/"/g, '""')}"`
+        ].join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1777,9 +1639,7 @@ function exportToJSON() {
             pdfPath: paper.pdfPath || '',
             pdfFilename: paper.pdfFilename || '',
             hasPDF: paper.hasPDF || false,
-            pdfSource: paper.pdfSource || 'none',
-            // PDF annotations
-            annotations: paper.annotations || []
+            pdfSource: paper.pdfSource || 'none'
         }))
     };
 
@@ -2186,9 +2046,7 @@ function importJSON(event) {
                     pdfPath: paperData.pdf ? (paperData.pdf.path || '') : (paperData.pdfPath || ''),
                     pdfFilename: paperData.pdf ? (paperData.pdf.filename || '') : (paperData.pdfFilename || ''),
                     pdfBlobUrl: null,
-                    pdfHandle: null,
-                    // PDF annotations
-                    annotations: Array.isArray(paperData.annotations) ? paperData.annotations : []
+                    pdfHandle: null
                 };
                 
                 // Try to restore PDF if file path exists
@@ -2496,7 +2354,7 @@ function showCSVImportInstructions() {
                 </ul>
                 
                 <div class="modal-actions">
-                    <button class="btn modal-dismiss-btn">Got it!</button>
+                    <button class="btn" onclick="this.closest('.modal').remove()">Got it!</button>
                 </div>
             </div>
         </div>
@@ -2506,17 +2364,10 @@ function showCSVImportInstructions() {
     modal.style.display = 'block';
     
     // Close modal handlers
-    const closeButton = modal.querySelector('.close-btn');
-    if (closeButton) {
-        closeButton.addEventListener('click', () => modal.remove());
-    }
-    const dismissButton = modal.querySelector('.modal-dismiss-btn');
-    if (dismissButton) {
-        dismissButton.addEventListener('click', () => modal.remove());
-    }
-    modal.addEventListener('click', (e) => {
+    modal.querySelector('.close-btn').onclick = () => modal.remove();
+    modal.onclick = (e) => {
         if (e.target === modal) modal.remove();
-    });
+    };
 }
 
 // Safe CSV line parsing to prevent ReDoS attacks
@@ -2635,30 +2486,12 @@ function buildCrossRefUrl(doi) {
 async function fetchFromCrossRef(doi) {
     const url = buildCrossRefUrl(doi);
 
-    // Create AbortController for timeout handling
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
-    let response;
-    try {
-        response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json'
-            },
-            signal: controller.signal
-        });
-    } catch (fetchError) {
-        clearTimeout(timeoutId);
-        // Handle network-level errors (CORS, connectivity, timeout, etc.)
-        if (fetchError.name === 'AbortError') {
-            throw new Error('Request timed out. Please check your internet connection and try again.');
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json'
         }
-        // Network errors (CORS, no internet, DNS failure, etc.)
-        throw new Error('Network error: Unable to connect to CrossRef. Please check your internet connection or try again later.');
-    } finally {
-        clearTimeout(timeoutId);
-    }
+    });
 
     if (!response.ok) {
         if (response.status === 404) {
@@ -2667,12 +2500,7 @@ async function fetchFromCrossRef(doi) {
         throw new Error(`CrossRef API error: ${response.status}`);
     }
 
-    let data;
-    try {
-        data = await response.json();
-    } catch (parseError) {
-        throw new Error('Invalid response from CrossRef. Please try again later.');
-    }
+    const data = await response.json();
     const message = data.message;
 
     // Extract authors - format as "FirstName LastName, FirstName LastName"
@@ -2833,30 +2661,12 @@ async function searchSemanticScholar(query) {
     const fields = 'title,authors,year,abstract,citationCount,journal,venue,externalIds,publicationTypes,fieldsOfStudy,openAccessPdf';
     const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&fields=${fields}&limit=10`;
 
-    // Create AbortController for timeout handling
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
-    let response;
-    try {
-        response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json'
-            },
-            signal: controller.signal
-        });
-    } catch (fetchError) {
-        clearTimeout(timeoutId);
-        // Handle network-level errors (CORS, connectivity, timeout, etc.)
-        if (fetchError.name === 'AbortError') {
-            throw new Error('Request timed out. Please check your internet connection and try again.');
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json'
         }
-        // Network errors (CORS, no internet, DNS failure, etc.)
-        throw new Error('Network error: Unable to connect to Semantic Scholar. Please check your internet connection or try again later.');
-    } finally {
-        clearTimeout(timeoutId);
-    }
+    });
 
     if (!response.ok) {
         if (response.status === 429) {
@@ -2865,12 +2675,7 @@ async function searchSemanticScholar(query) {
         throw new Error(`Semantic Scholar API error: ${response.status}`);
     }
 
-    let data;
-    try {
-        data = await response.json();
-    } catch (parseError) {
-        throw new Error('Invalid response from Semantic Scholar. Please try again later.');
-    }
+    const data = await response.json();
     return data.data || [];
 }
 
@@ -3138,8 +2943,6 @@ async function addFromSmartInput() {
             const errorMessage = error.message || 'Unknown error occurred';
             if (errorMessage.includes('not found')) {
                 alert(`DOI not found: "${detectedDOI}"\n\nThis DOI may not be registered with CrossRef. You can try the AI assistant to extract paper information.`);
-            } else if (errorMessage.includes('Network error') || errorMessage.includes('timed out')) {
-                alert(`${errorMessage}\n\nYou can try the AI assistant to enter paper information manually.`);
             } else if (errorMessage.includes('API error')) {
                 alert(`Failed to fetch from CrossRef: ${errorMessage}\n\nPlease try again later or use the AI assistant.`);
             } else {
@@ -3990,7 +3793,8 @@ function initializeEventListeners() {
     
     // Utility buttons
     document.getElementById('clearDataBtn').addEventListener('click', clearData);
-
+    document.getElementById('csvHelpBtn').addEventListener('click', showCSVImportInstructions);
+    
     // Import handlers
     document.getElementById('csvImport').addEventListener('change', importCSV);
     document.getElementById('jsonImport').addEventListener('change', importJSON);
@@ -4115,17 +3919,6 @@ function setupSummaryEventDelegation() {
             return;
         }
 
-        // Handle annotation badge clicks (open PDF viewer)
-        const annotationBadge = target.closest('.annotation-badge');
-        if (annotationBadge) {
-            event.stopPropagation();
-            const paperId = parseInt(annotationBadge.getAttribute('data-paper-id'));
-            if (paperId) {
-                openPDF(paperId);
-            }
-            return;
-        }
-
         // Handle edit button clicks
         if (target.classList.contains('edit-card-btn')) {
             const paperId = parseInt(target.getAttribute('data-paper-id'));
@@ -4186,62 +3979,14 @@ function setupSummaryEventDelegation() {
             }
             return;
         }
-
-        // Handle PDF attach button clicks
-        if (target.classList.contains('btn-attach-pdf')) {
-            event.stopPropagation();
-            const paperId = parseInt(target.getAttribute('data-paper-id'));
-            if (paperId) {
-                attachPDF(paperId);
-            }
-            return;
-        }
-
-        // Handle PDF open button clicks
-        if (target.classList.contains('btn-open-pdf')) {
-            event.stopPropagation();
-            const paperId = parseInt(target.getAttribute('data-paper-id'));
-            if (paperId) {
-                openPDF(paperId);
-            }
-            return;
-        }
-
-        // Handle PDF remove button clicks
-        if (target.classList.contains('btn-remove-pdf-small')) {
-            event.stopPropagation();
-            const paperId = parseInt(target.getAttribute('data-paper-id'));
-            if (paperId) {
-                removePDF(paperId);
-            }
-            return;
-        }
-
-        // Handle collapsed PDF badge clicks (to open PDF)
-        const pdfBadge = target.closest('.pdf-badge-small');
-        if (pdfBadge && !pdfBadge.classList.contains('inactive')) {
-            event.stopPropagation();
-            const paperId = parseInt(pdfBadge.getAttribute('data-paper-id'));
-            if (paperId) {
-                openPDF(paperId);
-            }
-            return;
-        }
     });
 
     // Global click handler to close dropdowns when clicking outside
     document.addEventListener('click', function(event) {
-        // Don't close paper-open dropdowns if clicking inside them
+        // Don't close if clicking inside a dropdown
         if (!event.target.closest('.paper-open-dropdown')) {
             const allDropdowns = document.querySelectorAll('.paper-open-menu');
             allDropdowns.forEach(dropdown => {
-                dropdown.classList.remove('show');
-            });
-        }
-        // Don't close pdf-attach dropdowns if clicking inside them
-        if (!event.target.closest('.pdf-attach-dropdown')) {
-            const allAttachDropdowns = document.querySelectorAll('.pdf-attach-menu');
-            allAttachDropdowns.forEach(dropdown => {
                 dropdown.classList.remove('show');
             });
         }
@@ -4535,27 +4280,6 @@ function showSettingsModal() {
                     </div>
                 </div>
             </div>
-            <div class="settings-section">
-                <h4 class="settings-section-title">Import/Export Help</h4>
-                <div class="help-content">
-                    <div class="help-format">
-                        <strong>JSON Format (Recommended)</strong>
-                        <p>Best for data portability and backup. Preserves all PDF information and metadata.</p>
-                    </div>
-                    <div class="help-format">
-                        <strong>BibTeX Format (Academic Standard)</strong>
-                        <p>Best for academic writing, LaTeX, and dissertation work. Works with Zotero, EndNote, Mendeley.</p>
-                    </div>
-                    <div class="help-format">
-                        <strong>CSV Format (Universal)</strong>
-                        <p>Works with Excel and Google Sheets. Simple and easy to edit.</p>
-                    </div>
-                    <div class="help-format">
-                        <strong>Import Features</strong>
-                        <p>All formats support automatic PDF restoration, data validation, and format conversion. Supports up to 1000 papers.</p>
-                    </div>
-                </div>
-            </div>
         </div>
     `;
     
@@ -4565,10 +4289,6 @@ function showSettingsModal() {
     document.getElementById('settingsCloseBtn').addEventListener('click', closeSettingsModal);
     document.getElementById('selectFolderBtn').addEventListener('click', handleSelectFolder);
     document.getElementById('clearFolderBtn').addEventListener('click', handleClearFolder);
-    document.getElementById('settingsClearAllBtn').addEventListener('click', function() {
-        closeSettingsModal();
-        clearData();
-    });
 
     // Validate and persist the CrossRef mailto setting for polite pool requests.
     const crossRefMailtoInput = document.getElementById('crossRefMailtoInput');
