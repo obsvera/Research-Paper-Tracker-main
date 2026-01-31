@@ -155,6 +155,23 @@ function validateUrl(url) {
     }
 }
 
+// Check if paper has PDF available (attached file OR URL)
+function hasPDFAvailable(paper) {
+    if (!paper) return false;
+    // Check for attached PDF file
+    if (paper.hasPDF) return true;
+    // Check for PDF URL
+    const pdfUrl = validateUrl(paper.pdf);
+    if (pdfUrl) return true;
+    return false;
+}
+
+// Get PDF URL if available (for papers with pdf field set)
+function getPDFUrl(paper) {
+    if (!paper) return null;
+    return validateUrl(paper.pdf);
+}
+
 // Summary function
 function showSummary() {
     const summaryContainer = document.getElementById('papersSummary');
@@ -233,12 +250,12 @@ function showSummary() {
                     <div class="paper-card-actions">
                         <button class="edit-card-btn" data-paper-id="${paper.id}" title="Edit this paper">✏️ Edit</button>
                         <button class="delete-card-btn" data-paper-id="${paper.id}" title="Delete this paper">🗑️ Delete</button>
-                        ${paperUrl || paper.hasPDF ? `
+                        ${paperUrl || hasPDFAvailable(paper) ? `
                             <div class="paper-open-dropdown">
                                 <button class="paper-open-btn" data-paper-id="${paper.id}" title="Open paper options">📖 Open Paper ▼</button>
                                 <div class="paper-open-menu" id="dropdown-${paper.id}">
                                     ${paperUrl ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="online">🌐 Open Online</button>` : ''}
-                                    ${paper.hasPDF ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="pdf">📄 Open PDF</button>` : ''}
+                                    ${hasPDFAvailable(paper) ? `<button class="paper-open-option" data-paper-id="${paper.id}" data-action="pdf">📄 Open PDF</button>` : ''}
                                 </div>
                             </div>
                         ` : ''}
@@ -1226,14 +1243,17 @@ async function openPDF(paperId) {
             } else {
                 alert('PDF file not accessible. Please reattach the PDF.');
             }
-        } else if (paper.doi && (paper.doi.includes('.pdf') || paper.doi.includes('pdf'))) {
-            // Open online PDF
-            window.open(paper.doi, '_blank', 'noopener,noreferrer');
-        } else if (paper.doi) {
-            // Try to open DOI/URL
-            window.open(paper.doi, '_blank', 'noopener,noreferrer');
         } else {
-            alert('No PDF available for this paper.');
+            // Check for PDF URL in the pdf field
+            const pdfUrl = getPDFUrl(paper);
+            if (pdfUrl) {
+                window.open(pdfUrl, '_blank', 'noopener,noreferrer');
+            } else if (paper.doi && (paper.doi.includes('.pdf') || paper.doi.includes('pdf'))) {
+                // Open online PDF from DOI
+                window.open(paper.doi, '_blank', 'noopener,noreferrer');
+            } else {
+                alert('No PDF available for this paper.');
+            }
         }
     } catch (error) {
         console.error('Error opening PDF:', error);
@@ -1350,13 +1370,13 @@ function updateSummaryCardPDF(card, paperId) {
 
     // Always recreate the dropdown if there's a URL or PDF
     const paperUrl = validateUrl(paper.doi);
-    if (paperUrl || paper.hasPDF) {
+    if (paperUrl || hasPDF) {
         const dropdownHTML = `
             <div class="paper-open-dropdown">
                 <button class="paper-open-btn" data-paper-id="${paperId}" title="Open paper options">📖 Open Paper ▼</button>
                 <div class="paper-open-menu" id="dropdown-${paperId}">
                     ${paperUrl ? `<button class="paper-open-option" data-paper-id="${paperId}" data-action="online">🌐 Open Online</button>` : ''}
-                    ${paper.hasPDF ? `<button class="paper-open-option" data-paper-id="${paperId}" data-action="pdf">📄 Open PDF</button>` : ''}
+                    ${hasPDF ? `<button class="paper-open-option" data-paper-id="${paperId}" data-action="pdf">📄 Open PDF</button>` : ''}
                 </div>
             </div>
         `;
@@ -3877,6 +3897,9 @@ function initializeEventListeners() {
         document.getElementById('bibtexImport').click();
     });
     
+    // Utility buttons
+    document.getElementById('clearDataBtn').addEventListener('click', clearData);
+
     // Import handlers
     document.getElementById('csvImport').addEventListener('change', importCSV);
     document.getElementById('jsonImport').addEventListener('change', importJSON);
@@ -4422,11 +4445,6 @@ function showSettingsModal() {
                         <p>All formats support automatic PDF restoration, data validation, and format conversion. Supports up to 1000 papers.</p>
                     </div>
                 </div>
-            </div>
-            <div class="settings-section danger-zone">
-                <h4 class="settings-section-title">Data Management</h4>
-                <p class="danger-warning">This action cannot be undone. All papers will be permanently deleted.</p>
-                <button class="btn btn-danger" id="settingsClearAllBtn">🗑️ Clear All Papers</button>
             </div>
         </div>
     `;
