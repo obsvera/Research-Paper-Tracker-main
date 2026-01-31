@@ -213,13 +213,13 @@ function showSummary() {
                     <div class="paper-header-controls">
                         <button class="collapse-toggle" data-paper-id="${paper.id}" title="Click to expand/collapse">▼</button>
                         ${(paper.annotations && paper.annotations.length > 0) ?
-                            `<span class="annotation-badge" onclick="openPDF(${paper.id})" title="${paper.annotations.length} annotation${paper.annotations.length !== 1 ? 's' : ''} - Click to view">
+                            `<span class="annotation-badge" data-paper-id="${paper.id}" title="${paper.annotations.length} annotation${paper.annotations.length !== 1 ? 's' : ''} - Click to view">
                                 <span class="annotation-badge-icon">📝</span>${paper.annotations.length}
                             </span>` : ''
                         }
                         <div class="pdf-indicator-collapsed">
                             ${paper.hasPDF ?
-                                `<span class="pdf-badge-small" data-paper-id="${paper.id}" onclick="openPDF(${paper.id})" title="Click to open PDF">📄</span>` :
+                                `<span class="pdf-badge-small" data-paper-id="${paper.id}" title="Click to open PDF">📄</span>` :
                                 `<span class="pdf-badge-small inactive" title="No PDF attached">📎</span>`
                             }
                         </div>
@@ -1412,12 +1412,14 @@ function updatePDFCellContent(cell, paperId) {
 function updateSummaryCardPDF(card, paperId) {
     const paper = papers.find(p => p.id === paperId);
     if (!paper) return;
+    // Track whether a PDF is available from file or URL
+    const hasPDF = hasPDFAvailable(paper);
 
     // Update collapsed view PDF indicator
     const pdfIndicatorCollapsed = card.querySelector('.pdf-indicator-collapsed');
     if (pdfIndicatorCollapsed) {
         pdfIndicatorCollapsed.innerHTML = paper.hasPDF ?
-            `<span class="pdf-badge-small" data-paper-id="${paperId}" onclick="openPDF(${paperId})" title="Click to open PDF">📄</span>` :
+            `<span class="pdf-badge-small" data-paper-id="${paperId}" title="Click to open PDF">📄</span>` :
             `<span class="pdf-badge-small inactive" title="No PDF attached">📎</span>`;
     }
 
@@ -2495,7 +2497,7 @@ function showCSVImportInstructions() {
                 </ul>
                 
                 <div class="modal-actions">
-                    <button class="btn" onclick="this.closest('.modal').remove()">Got it!</button>
+                    <button class="btn modal-dismiss-btn">Got it!</button>
                 </div>
             </div>
         </div>
@@ -2505,10 +2507,17 @@ function showCSVImportInstructions() {
     modal.style.display = 'block';
     
     // Close modal handlers
-    modal.querySelector('.close-btn').onclick = () => modal.remove();
-    modal.onclick = (e) => {
+    const closeButton = modal.querySelector('.close-btn');
+    if (closeButton) {
+        closeButton.addEventListener('click', () => modal.remove());
+    }
+    const dismissButton = modal.querySelector('.modal-dismiss-btn');
+    if (dismissButton) {
+        dismissButton.addEventListener('click', () => modal.remove());
+    }
+    modal.addEventListener('click', (e) => {
         if (e.target === modal) modal.remove();
-    };
+    });
 }
 
 // Safe CSV line parsing to prevent ReDoS attacks
@@ -4107,6 +4116,17 @@ function setupSummaryEventDelegation() {
             return;
         }
 
+        // Handle annotation badge clicks (open PDF viewer)
+        const annotationBadge = target.closest('.annotation-badge');
+        if (annotationBadge) {
+            event.stopPropagation();
+            const paperId = parseInt(annotationBadge.getAttribute('data-paper-id'));
+            if (paperId) {
+                openPDF(paperId);
+            }
+            return;
+        }
+
         // Handle edit button clicks
         if (target.classList.contains('edit-card-btn')) {
             const paperId = parseInt(target.getAttribute('data-paper-id'));
@@ -4199,9 +4219,10 @@ function setupSummaryEventDelegation() {
         }
 
         // Handle collapsed PDF badge clicks (to open PDF)
-        if (target.classList.contains('pdf-badge-small') && !target.classList.contains('inactive')) {
+        const pdfBadge = target.closest('.pdf-badge-small');
+        if (pdfBadge && !pdfBadge.classList.contains('inactive')) {
             event.stopPropagation();
-            const paperId = parseInt(target.getAttribute('data-paper-id'));
+            const paperId = parseInt(pdfBadge.getAttribute('data-paper-id'));
             if (paperId) {
                 openPDF(paperId);
             }
