@@ -26,6 +26,8 @@
     let selectedColor = 'yellow';
     let textLayer = null;
     let pdfContainer = null;
+    // Cache the latest text selection so button clicks can still highlight
+    let lastSelection = null;
 
     // Initialize PDF.js worker
     function initPDFJS() {
@@ -236,6 +238,7 @@
 
         const container = document.getElementById('pdf-canvas-container');
         container.innerHTML = '';
+        clearSelectionState();
 
         const page = await pdfDoc.getPage(pageNum);
 
@@ -311,26 +314,47 @@
     // Handle text selection
     function handleTextSelection(e) {
         const selection = window.getSelection();
-        if (selection.toString().trim().length > 0) {
-            // Enable the highlight button
-            document.getElementById('btn-add-highlight').classList.add('has-selection');
+        const selectedText = selection.toString().trim();
+        const highlightButton = document.getElementById('btn-add-highlight');
+
+        if (selectedText.length > 0 && selection.rangeCount > 0) {
+            // Store the selection so it survives clicking the highlight button
+            lastSelection = {
+                text: selectedText,
+                range: selection.getRangeAt(0).cloneRange(),
+                page: currentPage
+            };
+            if (highlightButton) {
+                highlightButton.classList.add('has-selection');
+            }
         } else {
-            document.getElementById('btn-add-highlight').classList.remove('has-selection');
+            lastSelection = null;
+            if (highlightButton) {
+                highlightButton.classList.remove('has-selection');
+            }
         }
     }
 
     // Add highlight from current selection
     function addHighlightFromSelection() {
         const selection = window.getSelection();
-        const selectedText = selection.toString().trim();
+        let selectedText = selection.toString().trim();
+        let range = null;
 
-        if (!selectedText) {
+        if (selectedText && selection.rangeCount > 0) {
+            range = selection.getRangeAt(0);
+        } else if (lastSelection && lastSelection.page === currentPage && lastSelection.range) {
+            // Fall back to the cached selection if the button click cleared it
+            selectedText = lastSelection.text;
+            range = lastSelection.range;
+        }
+
+        if (!selectedText || !range) {
             alert('Please select some text first.');
             return;
         }
 
         // Get selection position relative to the page
-        const range = selection.getRangeAt(0);
         const rect = range.getBoundingClientRect();
         const container = document.getElementById('pdf-canvas-container');
         const containerRect = container.getBoundingClientRect();
@@ -367,7 +391,7 @@
 
         // Clear selection
         selection.removeAllRanges();
-        document.getElementById('btn-add-highlight').classList.remove('has-selection');
+        clearSelectionState();
 
         // Update annotations list
         renderAnnotationsList();
@@ -623,11 +647,21 @@
             document.body.style.overflow = '';
             pdfDoc = null;
             currentPaperId = null;
+            clearSelectionState();
 
             // Update paper cards to show annotation counts
             if (typeof showSummary === 'function') {
                 showSummary();
             }
+        }
+    }
+
+    // Reset selection UI state when changing pages or closing
+    function clearSelectionState() {
+        lastSelection = null;
+        const highlightButton = document.getElementById('btn-add-highlight');
+        if (highlightButton) {
+            highlightButton.classList.remove('has-selection');
         }
     }
 

@@ -2719,13 +2719,22 @@ body[data-theme="dark"] .search-result-badge.field-badge {
     display: block;
 }
 
+/* Ensure PDF text layer stays selectable and aligned */
 .pdf-text-layer {
     position: absolute;
     top: 0;
     left: 0;
+    right: 0;
+    bottom: 0;
     overflow: hidden;
     opacity: 0.2;
     line-height: 1.0;
+    text-align: initial;
+    -webkit-text-size-adjust: none;
+    pointer-events: none;
+    -webkit-user-select: text;
+    user-select: text;
+    z-index: 2;
 }
 
 .pdf-text-layer > span {
@@ -2733,6 +2742,11 @@ body[data-theme="dark"] .search-result-badge.field-badge {
     position: absolute;
     white-space: pre;
     cursor: text;
+    transform-origin: 0 0;
+    -webkit-transform-origin: 0 0;
+    pointer-events: auto;
+    -webkit-user-select: text;
+    user-select: text;
 }
 
 .pdf-text-layer ::selection {
@@ -2744,6 +2758,7 @@ body[data-theme="dark"] .search-result-badge.field-badge {
     top: 0;
     left: 0;
     pointer-events: none;
+    z-index: 3;
 }
 
 .pdf-highlight {
