@@ -1468,8 +1468,7 @@ function updateSummaryCardPDF(card, paperId) {
             }
         }
 
-        // Reattach event listeners for the new dropdown
-        attachDropdownEventListeners(actionsContainer);
+        // Event delegation handles dropdown interactions globally
     } else {
         // If no URL and no PDF, ensure we don't have any leftover dropdown
         const remainingDropdown = actionsContainer.querySelector('.paper-open-dropdown');
