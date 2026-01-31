@@ -1243,8 +1243,12 @@ async function openPDF(paperId) {
         if (typeof openPDFViewer === 'function' && typeof pdfjsLib !== 'undefined') {
             // Use the embedded PDF viewer with highlighting support
             if (paper.hasPDF || getPDFUrl(paper)) {
-                openPDFViewer(paperId);
-                return;
+                try {
+                    await openPDFViewer(paperId);
+                    return;
+                } catch (viewerError) {
+                    console.error('Error opening embedded PDF viewer:', viewerError);
+                }
             }
         }
 
