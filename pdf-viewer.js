@@ -153,6 +153,7 @@
         }
 
         createViewerModal();
+        updateSelectionColorClass(selectedColor);
         const modal = document.getElementById('pdf-viewer-modal');
         modal.classList.add('open');
         document.body.style.overflow = 'hidden';
@@ -663,10 +664,26 @@
         const modal = document.getElementById('pdf-viewer-modal');
         if (!modal) return;
 
-        Object.keys(HIGHLIGHT_COLORS).forEach(key => {
-            modal.classList.remove(`selection-color-${key}`);
-        });
-        modal.classList.add(`selection-color-${colorKey}`);
+        const highlightColor = HIGHLIGHT_COLORS[colorKey] || HIGHLIGHT_COLORS.yellow;
+        const selectionColor = hexToRgba(highlightColor.hex, 0.4);
+        modal.style.setProperty('--pdf-selection-color', selectionColor);
+    }
+
+    // Convert hex color to rgba for selection overlay
+    function hexToRgba(hex, alpha) {
+        if (!hex || typeof hex !== 'string') {
+            return `rgba(255, 235, 59, ${alpha})`;
+        }
+
+        const normalized = hex.replace('#', '').trim();
+        if (normalized.length !== 6) {
+            return `rgba(255, 235, 59, ${alpha})`;
+        }
+
+        const r = parseInt(normalized.slice(0, 2), 16);
+        const g = parseInt(normalized.slice(2, 4), 16);
+        const b = parseInt(normalized.slice(4, 6), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
     // Reset selection UI state when changing pages or closing
