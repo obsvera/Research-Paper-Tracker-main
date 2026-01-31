@@ -213,7 +213,7 @@ function showSummary() {
                     <div class="paper-header-controls">
                         <button class="collapse-toggle" data-paper-id="${paper.id}" title="Click to expand/collapse">▼</button>
                         <div class="pdf-indicator-collapsed">
-                            ${hasPDFAvailable(paper) ?
+                            ${paper.hasPDF ?
                                 `<span class="pdf-badge-small" data-paper-id="${paper.id}" onclick="openPDF(${paper.id})" title="Click to open PDF">📄</span>` :
                                 `<span class="pdf-badge-small inactive" title="No PDF attached">📎</span>`
                             }
@@ -260,16 +260,10 @@ function showSummary() {
                             </div>
                         ` : ''}
                         <div class="pdf-card-controls">
-                            ${hasPDFAvailable(paper) ?
+                            ${!paper.hasPDF ?
+                                `<button class="btn-attach-pdf" data-paper-id="${paper.id}" title="Attach PDF file">📎 Attach PDF</button>` :
                                 `<button class="btn-open-pdf" data-paper-id="${paper.id}" title="Open PDF">📄 Open</button>
-                                 ${paper.hasPDF ? `<button class="btn-remove-pdf-small" data-paper-id="${paper.id}" title="Remove PDF">✕</button>` : ''}` :
-                                `<div class="pdf-attach-dropdown">
-                                    <button class="btn-attach-pdf" data-paper-id="${paper.id}" title="Attach PDF">📎 Attach PDF ▼</button>
-                                    <div class="pdf-attach-menu" id="attach-dropdown-${paper.id}">
-                                        <button class="pdf-attach-option" data-paper-id="${paper.id}" data-action="file">📁 From File</button>
-                                        <button class="pdf-attach-option" data-paper-id="${paper.id}" data-action="url">🔗 From URL</button>
-                                    </div>
-                                </div>`
+                                 <button class="btn-remove-pdf-small" data-paper-id="${paper.id}" title="Remove PDF">✕</button>`
                             }
                         </div>
                         <button class="copy-citation-card-btn" data-paper-id="${paper.id}" title="Copy citation to clipboard">📋 Copy Citation</button>
@@ -1403,12 +1397,10 @@ function updateSummaryCardPDF(card, paperId) {
     const paper = papers.find(p => p.id === paperId);
     if (!paper) return;
 
-    const hasPDF = hasPDFAvailable(paper);
-
     // Update collapsed view PDF indicator
     const pdfIndicatorCollapsed = card.querySelector('.pdf-indicator-collapsed');
     if (pdfIndicatorCollapsed) {
-        pdfIndicatorCollapsed.innerHTML = hasPDF ?
+        pdfIndicatorCollapsed.innerHTML = paper.hasPDF ?
             `<span class="pdf-badge-small" data-paper-id="${paperId}" onclick="openPDF(${paperId})" title="Click to open PDF">📄</span>` :
             `<span class="pdf-badge-small inactive" title="No PDF attached">📎</span>`;
     }
@@ -1416,16 +1408,10 @@ function updateSummaryCardPDF(card, paperId) {
     // Update expanded view PDF controls
     const pdfCardControls = card.querySelector('.pdf-card-controls');
     if (pdfCardControls) {
-        pdfCardControls.innerHTML = hasPDF ?
+        pdfCardControls.innerHTML = !paper.hasPDF ?
+            `<button class="btn-attach-pdf" data-paper-id="${paperId}" title="Attach PDF file">📎 Attach PDF</button>` :
             `<button class="btn-open-pdf" data-paper-id="${paperId}" title="Open PDF">📄 Open</button>
-             ${paper.hasPDF ? `<button class="btn-remove-pdf-small" data-paper-id="${paperId}" title="Remove PDF">✕</button>` : ''}` :
-            `<div class="pdf-attach-dropdown">
-                <button class="btn-attach-pdf" data-paper-id="${paperId}" title="Attach PDF">📎 Attach PDF ▼</button>
-                <div class="pdf-attach-menu" id="attach-dropdown-${paperId}">
-                    <button class="pdf-attach-option" data-paper-id="${paperId}" data-action="file">📁 From File</button>
-                    <button class="pdf-attach-option" data-paper-id="${paperId}" data-action="url">🔗 From URL</button>
-                </div>
-            </div>`;
+             <button class="btn-remove-pdf-small" data-paper-id="${paperId}" title="Remove PDF">✕</button>`;
     }
 
     const actionsContainer = card.querySelector('.paper-card-actions');
@@ -3968,8 +3954,7 @@ function initializeEventListeners() {
     
     // Utility buttons
     document.getElementById('clearDataBtn').addEventListener('click', clearData);
-    document.getElementById('csvHelpBtn').addEventListener('click', showCSVImportInstructions);
-    
+
     // Import handlers
     document.getElementById('csvImport').addEventListener('change', importCSV);
     document.getElementById('jsonImport').addEventListener('change', importJSON);
@@ -4155,33 +4140,12 @@ function setupSummaryEventDelegation() {
             return;
         }
 
-        // Handle PDF attach button clicks (toggle dropdown)
+        // Handle PDF attach button clicks
         if (target.classList.contains('btn-attach-pdf')) {
             event.stopPropagation();
             const paperId = parseInt(target.getAttribute('data-paper-id'));
             if (paperId) {
-                togglePDFAttachDropdown(paperId);
-            }
-            return;
-        }
-
-        // Handle PDF attach option clicks (from file or URL)
-        if (target.classList.contains('pdf-attach-option')) {
-            event.stopPropagation();
-            const paperId = parseInt(target.getAttribute('data-paper-id'));
-            const action = target.getAttribute('data-action');
-            if (paperId && action) {
-                // Close the dropdown
-                const dropdown = document.getElementById(`attach-dropdown-${paperId}`);
-                if (dropdown) {
-                    dropdown.classList.remove('show');
-                }
-                // Handle the action
-                if (action === 'file') {
-                    attachPDF(paperId);
-                } else if (action === 'url') {
-                    attachPDFFromURL(paperId);
-                }
+                attachPDF(paperId);
             }
             return;
         }
@@ -4523,6 +4487,27 @@ function showSettingsModal() {
                     </div>
                 </div>
             </div>
+            <div class="settings-section">
+                <h4 class="settings-section-title">Import/Export Help</h4>
+                <div class="help-content">
+                    <div class="help-format">
+                        <strong>JSON Format (Recommended)</strong>
+                        <p>Best for data portability and backup. Preserves all PDF information and metadata.</p>
+                    </div>
+                    <div class="help-format">
+                        <strong>BibTeX Format (Academic Standard)</strong>
+                        <p>Best for academic writing, LaTeX, and dissertation work. Works with Zotero, EndNote, Mendeley.</p>
+                    </div>
+                    <div class="help-format">
+                        <strong>CSV Format (Universal)</strong>
+                        <p>Works with Excel and Google Sheets. Simple and easy to edit.</p>
+                    </div>
+                    <div class="help-format">
+                        <strong>Import Features</strong>
+                        <p>All formats support automatic PDF restoration, data validation, and format conversion. Supports up to 1000 papers.</p>
+                    </div>
+                </div>
+            </div>
         </div>
     `;
     
@@ -4532,6 +4517,10 @@ function showSettingsModal() {
     document.getElementById('settingsCloseBtn').addEventListener('click', closeSettingsModal);
     document.getElementById('selectFolderBtn').addEventListener('click', handleSelectFolder);
     document.getElementById('clearFolderBtn').addEventListener('click', handleClearFolder);
+    document.getElementById('settingsClearAllBtn').addEventListener('click', function() {
+        closeSettingsModal();
+        clearData();
+    });
 
     // Validate and persist the CrossRef mailto setting for polite pool requests.
     const crossRefMailtoInput = document.getElementById('crossRefMailtoInput');
