@@ -3879,8 +3879,7 @@ function initializeEventListeners() {
     
     // Utility buttons
     document.getElementById('clearDataBtn').addEventListener('click', clearData);
-    document.getElementById('csvHelpBtn').addEventListener('click', showCSVImportInstructions);
-    
+
     // Import handlers
     document.getElementById('csvImport').addEventListener('change', importCSV);
     document.getElementById('jsonImport').addEventListener('change', importJSON);
@@ -4403,6 +4402,27 @@ function showSettingsModal() {
                     <div class="theme-info">
                         <div class="theme-name">Clean High Contrast</div>
                         <div class="theme-description">Clean white background with high contrast</div>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h4 class="settings-section-title">Import/Export Help</h4>
+                <div class="help-content">
+                    <div class="help-format">
+                        <strong>JSON Format (Recommended)</strong>
+                        <p>Best for data portability and backup. Preserves all PDF information and metadata.</p>
+                    </div>
+                    <div class="help-format">
+                        <strong>BibTeX Format (Academic Standard)</strong>
+                        <p>Best for academic writing, LaTeX, and dissertation work. Works with Zotero, EndNote, Mendeley.</p>
+                    </div>
+                    <div class="help-format">
+                        <strong>CSV Format (Universal)</strong>
+                        <p>Works with Excel and Google Sheets. Simple and easy to edit.</p>
+                    </div>
+                    <div class="help-format">
+                        <strong>Import Features</strong>
+                        <p>All formats support automatic PDF restoration, data validation, and format conversion. Supports up to 1000 papers.</p>
                     </div>
                 </div>
             </div>

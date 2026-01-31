@@ -2071,6 +2071,32 @@ body[data-theme="clean"] {
     opacity: 0.8;
 }
 
+/* Help Content in Settings */
+.help-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.help-format {
+    padding: 12px;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.help-format strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--accent-color);
+}
+
+.help-format p {
+    margin: 0;
+    font-size: 14px;
+    opacity: 0.9;
+}
+
 /* Edit Paper Modal Styles */
 .edit-modal {
     position: fixed;
