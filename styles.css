@@ -2654,6 +2654,22 @@ body[data-theme="dark"] .search-result-badge.field-badge {
     transition: transform 0.2s, border-color 0.2s;
 }
 
+.highlight-color-btn.color-yellow {
+    background: #ffeb3b;
+}
+
+.highlight-color-btn.color-green {
+    background: #81c784;
+}
+
+.highlight-color-btn.color-blue {
+    background: #64b5f6;
+}
+
+.highlight-color-btn.color-red {
+    background: #ef5350;
+}
+
 .highlight-color-btn:hover {
     transform: scale(1.1);
 }
@@ -2720,6 +2736,7 @@ body[data-theme="dark"] .search-result-badge.field-badge {
 }
 
 /* Ensure PDF text layer stays selectable and aligned */
+/* Ensure PDF text selection uses true highlight colors */
 .pdf-text-layer {
     position: absolute;
     top: 0;
@@ -2727,7 +2744,7 @@ body[data-theme="dark"] .search-result-badge.field-badge {
     right: 0;
     bottom: 0;
     overflow: hidden;
-    opacity: 0.2;
+    opacity: 1;
     line-height: 1.0;
     text-align: initial;
     -webkit-text-size-adjust: none;
@@ -2750,7 +2767,23 @@ body[data-theme="dark"] .search-result-badge.field-badge {
 }
 
 .pdf-text-layer ::selection {
-    background: rgba(74, 144, 226, 0.4);
+    background: rgba(255, 235, 59, 0.4);
+}
+
+.pdf-viewer-modal.selection-color-yellow .pdf-text-layer ::selection {
+    background: rgba(255, 235, 59, 0.4);
+}
+
+.pdf-viewer-modal.selection-color-green .pdf-text-layer ::selection {
+    background: rgba(129, 199, 132, 0.4);
+}
+
+.pdf-viewer-modal.selection-color-blue .pdf-text-layer ::selection {
+    background: rgba(100, 181, 246, 0.4);
+}
+
+.pdf-viewer-modal.selection-color-red .pdf-text-layer ::selection {
+    background: rgba(239, 83, 80, 0.4);
 }
 
 .pdf-highlight-layer {
