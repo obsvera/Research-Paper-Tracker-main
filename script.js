@@ -1173,6 +1173,61 @@ async function attachPDF(paperId) {
     }
 }
 
+// Attach PDF from URL
+function attachPDFFromURL(paperId) {
+    const paper = papers.find(p => p.id === paperId);
+    if (!paper) return;
+
+    const url = prompt('Enter PDF URL:', paper.pdf || '');
+    if (url === null) return; // User cancelled
+
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+        // User cleared the URL - remove PDF URL
+        paper.pdf = '';
+        updatePaperUI(paperId);
+        storage.save();
+        showSummary();
+        return;
+    }
+
+    // Validate URL
+    const validatedUrl = validateUrl(trimmedUrl);
+    if (!validatedUrl) {
+        alert('Invalid URL. Please enter a valid http or https URL.');
+        return;
+    }
+
+    // Save the PDF URL
+    paper.pdf = validatedUrl;
+
+    // Update UI
+    updatePaperUI(paperId);
+    storage.save();
+
+    // Refresh summary to update PDF controls
+    showSummary();
+
+    console.log(`PDF URL set: ${paper.pdf}`);
+}
+
+// Toggle PDF attach dropdown
+function togglePDFAttachDropdown(paperId) {
+    // Close all other attach dropdowns first
+    const allDropdowns = document.querySelectorAll('.pdf-attach-menu');
+    allDropdowns.forEach(dropdown => {
+        if (dropdown.id !== `attach-dropdown-${paperId}`) {
+            dropdown.classList.remove('show');
+        }
+    });
+
+    // Toggle the clicked dropdown
+    const dropdown = document.getElementById(`attach-dropdown-${paperId}`);
+    if (dropdown) {
+        dropdown.classList.toggle('show');
+    }
+}
+
 async function openPDF(paperId) {
     try {
         const paper = papers.find(p => p.id === paperId);
@@ -4128,10 +4183,17 @@ function setupSummaryEventDelegation() {
 
     // Global click handler to close dropdowns when clicking outside
     document.addEventListener('click', function(event) {
-        // Don't close if clicking inside a dropdown
+        // Don't close paper-open dropdowns if clicking inside them
         if (!event.target.closest('.paper-open-dropdown')) {
             const allDropdowns = document.querySelectorAll('.paper-open-menu');
             allDropdowns.forEach(dropdown => {
+                dropdown.classList.remove('show');
+            });
+        }
+        // Don't close pdf-attach dropdowns if clicking inside them
+        if (!event.target.closest('.pdf-attach-dropdown')) {
+            const allAttachDropdowns = document.querySelectorAll('.pdf-attach-menu');
+            allAttachDropdowns.forEach(dropdown => {
                 dropdown.classList.remove('show');
             });
         }
