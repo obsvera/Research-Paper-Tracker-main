@@ -888,6 +888,90 @@ textarea {
     text-align: center;
 }
 
+/* PDF Card Controls - Collapsed and Expanded Views */
+.paper-header-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.pdf-indicator-collapsed {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pdf-badge-small {
+    font-size: 14px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.pdf-badge-small:hover:not(.inactive) {
+    background: rgba(74, 144, 226, 0.1);
+}
+
+.pdf-badge-small.inactive {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.pdf-card-controls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.btn-attach-pdf {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-attach-pdf:hover {
+    background: #218838;
+    transform: translateY(-1px);
+}
+
+.btn-open-pdf {
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-open-pdf:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+}
+
+.btn-remove-pdf-small {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-remove-pdf-small:hover {
+    background: #c82333;
+}
+
 /* Paper Open Dropdown Styles */
 .paper-open-dropdown {
     position: relative;
@@ -1419,6 +1503,16 @@ textarea {
         align-items: stretch;
     }
 
+    .pdf-card-controls {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .btn-attach-pdf,
+    .btn-open-pdf {
+        flex: 1;
+    }
+
     .paper-open-btn,
     .copy-citation-card-btn,
     .paper-link {
@@ -1480,7 +1574,11 @@ textarea {
     .copy-citation-btn,
     .copy-citation-card-btn,
     .paper-open-btn,
-    .paper-link {
+    .paper-link,
+    .btn-attach-pdf,
+    .btn-open-pdf,
+    .btn-remove-pdf-small,
+    .pdf-badge-small {
         min-height: 44px;
         min-width: 44px;
         touch-action: manipulation; /* Disable double-tap zoom */
