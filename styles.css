@@ -2736,7 +2736,6 @@ body[data-theme="dark"] .search-result-badge.field-badge {
 }
 
 /* Ensure PDF text layer stays selectable and aligned */
-/* Ensure PDF text selection uses true highlight colors */
 .pdf-text-layer {
     position: absolute;
     top: 0;

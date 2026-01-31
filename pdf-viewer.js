@@ -658,17 +658,6 @@
         }
     }
 
-    // Keep selection highlight color in sync with the chosen highlighter
-    function updateSelectionColorClass(colorKey) {
-        const modal = document.getElementById('pdf-viewer-modal');
-        if (!modal) return;
-
-        Object.keys(HIGHLIGHT_COLORS).forEach(key => {
-            modal.classList.remove(`selection-color-${key}`);
-        });
-        modal.classList.add(`selection-color-${colorKey}`);
-    }
-
     // Reset selection UI state when changing pages or closing
     function clearSelectionState() {
         lastSelection = null;
