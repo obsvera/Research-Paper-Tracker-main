@@ -34,6 +34,24 @@ let errorCount = 0;
 const MAX_ERRORS = 3;
 const STORAGE_KEY = 'research-tracker-data-v1';
 const SETTINGS_KEY = 'research-tracker-settings-v1';
+const CATEGORIES_KEY = 'research-tracker-categories-v1';
+
+// Categories management
+let categories = [];
+
+// Default category colors
+const DEFAULT_CATEGORY_COLORS = [
+    '#4a90e2', // Blue
+    '#50c878', // Emerald Green
+    '#ff6b6b', // Coral Red
+    '#ffa500', // Orange
+    '#9b59b6', // Purple
+    '#20b2aa', // Light Sea Green
+    '#f39c12', // Golden Yellow
+    '#e91e63', // Pink
+    '#00bcd4', // Cyan
+    '#795548'  // Brown
+];
 // Optional contact email used for CrossRef polite pool requests.
 let crossRefMailto = '';
 
@@ -74,6 +92,20 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Calculate contrast color (black or white) for text on colored background
+function getContrastColor(hexColor) {
+    if (!hexColor) return '#ffffff';
+    // Remove # if present
+    const hex = hexColor.replace('#', '');
+    // Parse RGB values
+    const r = parseInt(hex.substr(0, 2), 16) || 0;
+    const g = parseInt(hex.substr(2, 2), 16) || 0;
+    const b = parseInt(hex.substr(4, 2), 16) || 0;
+    // Calculate luminance
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5 ? '#000000' : '#ffffff';
 }
 
 // Validate URLs to prevent XSS and data exfiltration
@@ -196,11 +228,20 @@ function showSummary() {
         const stars = paper.rating ? '★'.repeat(Math.min(parseInt(paper.rating) || 0, 5)) : '';
         const paperUrl = validateUrl(paper.doi);
 
+        // Get category info
+        const category = paper.category ? getCategoryById(paper.category) : null;
+        const categoryBadge = category ?
+            `<span class="category-badge" style="background-color: ${escapeHtml(category.color)}; color: ${getContrastColor(category.color)}">${escapeHtml(category.name)}</span>` : '';
 
         return `
             <div class="paper-card collapsed" data-paper-id="${paper.id}">
-                <div class="paper-status-compact">
-                    <span class="status-badge">${escapeHtml((paper.status || 'to-read').replace('-', ' '))}</span>
+                <div class="paper-top-bar">
+                    <div class="paper-status-compact">
+                        <span class="status-badge">${escapeHtml((paper.status || 'to-read').replace('-', ' '))}</span>
+                    </div>
+                    <div class="paper-category-compact">
+                        ${categoryBadge}
+                    </div>
                 </div>
 
                 <div class="paper-header">
@@ -320,7 +361,8 @@ function addRow() {
             hasPDF: false,
             pdfSource: "none",
             pdfBlobUrl: null,
-            annotations: [] // PDF annotations (highlights, notes)
+            annotations: [], // PDF annotations (highlights, notes)
+            category: "" // Category ID for grouping papers
         };
         papers.push(newPaper);
         batchUpdates(newPaper.id);  // Pass ID for incremental row update
@@ -3500,6 +3542,16 @@ function showPreviewModal(paperInfo) {
                     <label>PDF</label>
                     <input type="text" id="preview-pdf" value="${sanitizedPaper.pdf}" maxlength="500">
                 </div>
+                <div class="modal-field">
+                    <label>Category</label>
+                    <div class="category-select-wrapper preview-category-wrapper">
+                        <select id="preview-category">
+                            <option value="">No Category</option>
+                            ${categories.map(cat => `<option value="${escapeHtml(cat.id)}" data-color="${escapeHtml(cat.color)}">${escapeHtml(cat.name)}</option>`).join('')}
+                        </select>
+                        <button type="button" class="btn btn-small btn-add-category" id="previewAddCategoryBtn" title="Add new category">+</button>
+                    </div>
+                </div>
             </div>
             <div class="modal-actions">
                 <button class="modal-btn modal-btn-secondary" id="preview-cancel-btn">Cancel</button>
@@ -3507,14 +3559,32 @@ function showPreviewModal(paperInfo) {
             </div>
         </div>
     `;
-    
+
     document.body.appendChild(modal);
-    
+
     // Add event listeners for modal buttons
     document.getElementById('preview-close-btn').addEventListener('click', closePreviewModal);
     document.getElementById('preview-cancel-btn').addEventListener('click', closePreviewModal);
     document.getElementById('preview-add-btn').addEventListener('click', addPaperFromPreview);
-    
+
+    // Add category button handler
+    const previewAddCategoryBtn = document.getElementById('previewAddCategoryBtn');
+    if (previewAddCategoryBtn) {
+        previewAddCategoryBtn.addEventListener('click', () => {
+            showAddCategoryModal((newCategory) => {
+                const categorySelect = document.getElementById('preview-category');
+                if (categorySelect && newCategory) {
+                    const option = document.createElement('option');
+                    option.value = newCategory.id;
+                    option.textContent = newCategory.name;
+                    option.dataset.color = newCategory.color;
+                    option.selected = true;
+                    categorySelect.appendChild(option);
+                }
+            });
+        });
+    }
+
     // Focus first input with safety check
     setTimeout(() => {
         const titleInput = document.getElementById('preview-title');
@@ -3548,12 +3618,13 @@ function addPaperFromPreview() {
     const languageEl = document.getElementById('preview-language');
     const citationEl = document.getElementById('preview-citation');
     const pdfEl = document.getElementById('preview-pdf');
-    
+    const categoryEl = document.getElementById('preview-category');
+
     if (!titleEl || !authorsEl || !yearEl || !keywordsEl || !journalEl || !abstractEl || !relevanceEl) {
         alert('Error: Could not find all required form fields');
         return;
     }
-    
+
     const newPaper = {
         id: nextId++,
         // New JSON structure fields (in exact order)
@@ -3580,6 +3651,7 @@ function addPaperFromPreview() {
         language: languageEl ? languageEl.value || 'en' : 'en', // Publication language
         citation: citationEl ? citationEl.value || '' : '', // Formatted citation
         pdf: pdfEl ? pdfEl.value || '' : '', // PDF file path or link
+        category: categoryEl ? categoryEl.value || '' : '', // Category ID
         // Legacy fields for backward compatibility
         url: doiEl ? doiEl.value || '' : '',
         pdfPath: "",
@@ -3759,7 +3831,8 @@ const storage = {
                 pdfFilename: String(p.pdfFilename || '').slice(0, 200),
                 hasPDF: Boolean(p.hasPDF || false),
                 pdfSource: ['folder', 'local', 'online', 'none', 'indexeddb'].includes(p.pdfSource) ? p.pdfSource : 'none',
-                pdfBlobUrl: p.pdfBlobUrl || null
+                pdfBlobUrl: p.pdfBlobUrl || null,
+                category: String(p.category || '').slice(0, 100) // Category ID
             };
             });
             
@@ -3782,6 +3855,128 @@ const storage = {
         }
     }
 };
+
+// Categories storage
+const categoryStorage = {
+    save() {
+        try {
+            localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+        } catch (error) {
+            handleError(error, 'categoryStorage.save');
+        }
+    },
+
+    load() {
+        try {
+            const stored = localStorage.getItem(CATEGORIES_KEY);
+            if (!stored) {
+                categories = [];
+                return false;
+            }
+            const data = JSON.parse(stored);
+            if (!Array.isArray(data)) {
+                categories = [];
+                return false;
+            }
+            // Sanitize loaded categories
+            categories = data.map(c => ({
+                id: String(c.id || '').slice(0, 100),
+                name: String(c.name || '').slice(0, 100),
+                color: String(c.color || '#4a90e2').slice(0, 20)
+            })).filter(c => c.id && c.name);
+            return true;
+        } catch (error) {
+            console.warn('Categories load error:', error.message);
+            categories = [];
+            return false;
+        }
+    },
+
+    clear() {
+        try {
+            localStorage.removeItem(CATEGORIES_KEY);
+            categories = [];
+        } catch (error) {
+            handleError(error, 'categoryStorage.clear');
+        }
+    }
+};
+
+// Category management functions
+function generateCategoryId() {
+    return 'cat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+function addCategory(name, color) {
+    if (!name || typeof name !== 'string') return null;
+
+    const sanitizedName = name.trim().slice(0, 100);
+    if (!sanitizedName) return null;
+
+    // Check for duplicate names
+    if (categories.some(c => c.name.toLowerCase() === sanitizedName.toLowerCase())) {
+        return null;
+    }
+
+    const newCategory = {
+        id: generateCategoryId(),
+        name: sanitizedName,
+        color: color || DEFAULT_CATEGORY_COLORS[categories.length % DEFAULT_CATEGORY_COLORS.length]
+    };
+
+    categories.push(newCategory);
+    categoryStorage.save();
+    return newCategory;
+}
+
+function updateCategory(id, name, color) {
+    const category = categories.find(c => c.id === id);
+    if (!category) return false;
+
+    if (name) {
+        const sanitizedName = name.trim().slice(0, 100);
+        // Check for duplicate names (excluding current category)
+        if (categories.some(c => c.id !== id && c.name.toLowerCase() === sanitizedName.toLowerCase())) {
+            return false;
+        }
+        category.name = sanitizedName;
+    }
+
+    if (color) {
+        category.color = color;
+    }
+
+    categoryStorage.save();
+    return true;
+}
+
+function deleteCategory(id) {
+    const index = categories.findIndex(c => c.id === id);
+    if (index === -1) return false;
+
+    categories.splice(index, 1);
+
+    // Remove category from all papers that have it
+    papers.forEach(paper => {
+        if (paper.category === id) {
+            paper.category = '';
+        }
+    });
+
+    categoryStorage.save();
+    storage.save();
+    showSummary();
+    return true;
+}
+
+function getCategoryById(id) {
+    return categories.find(c => c.id === id) || null;
+}
+
+function getCategoryByName(name) {
+    if (!name) return null;
+    return categories.find(c => c.name.toLowerCase() === name.toLowerCase()) || null;
+}
 
 // Migration function for existing data
 function migrateToNewFormat() {
@@ -3938,7 +4133,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Load settings first
     await loadSettings();
-    
+
+    // Load categories
+    categoryStorage.load();
+
     if (storage.load()) {
         console.log('Loaded saved research data');
         
@@ -4402,6 +4600,19 @@ function showEditPaperModal(paperId) {
                         </div>
                     </div>
 
+                    <div class="form-row">
+                        <div class="form-group category-select-group">
+                            <label for="edit-category">Category:</label>
+                            <div class="category-select-wrapper">
+                                <select id="edit-category" name="category">
+                                    <option value="">No Category</option>
+                                    ${categories.map(cat => `<option value="${escapeHtml(cat.id)}" ${paper.category === cat.id ? 'selected' : ''} data-color="${escapeHtml(cat.color)}">${escapeHtml(cat.name)}</option>`).join('')}
+                                </select>
+                                <button type="button" class="btn btn-small btn-add-category" id="editAddCategoryBtn" title="Add new category">+</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="form-group">
                         <label for="edit-abstract">Abstract:</label>
                         <textarea id="edit-abstract" name="abstract" rows="3" placeholder="Key findings, methodology, and main contributions...">${escapeHtml(paper.abstract)}</textarea>
@@ -4465,6 +4676,266 @@ function showEditPaperModal(paperId) {
 
         closeModal();
     });
+
+    // Add category button handler
+    const addCategoryBtn = document.getElementById('editAddCategoryBtn');
+    if (addCategoryBtn) {
+        addCategoryBtn.addEventListener('click', () => {
+            showAddCategoryModal((newCategory) => {
+                // Refresh the category dropdown
+                const categorySelect = document.getElementById('edit-category');
+                if (categorySelect && newCategory) {
+                    const option = document.createElement('option');
+                    option.value = newCategory.id;
+                    option.textContent = newCategory.name;
+                    option.dataset.color = newCategory.color;
+                    option.selected = true;
+                    categorySelect.appendChild(option);
+                }
+            });
+        });
+    }
+}
+
+// Show add category modal
+function showAddCategoryModal(onSave) {
+    const modal = document.createElement('div');
+    modal.className = 'category-modal';
+    modal.innerHTML = `
+        <div class="category-modal-content">
+            <div class="category-modal-header">
+                <h3>Add New Category</h3>
+                <button class="category-modal-close" id="categoryModalCloseBtn">&times;</button>
+            </div>
+            <div class="category-modal-body">
+                <div class="form-group">
+                    <label for="category-name">Category Name:</label>
+                    <input type="text" id="category-name" maxlength="100" placeholder="Enter category name..." required>
+                </div>
+                <div class="form-group">
+                    <label for="category-color">Color:</label>
+                    <div class="color-picker-wrapper">
+                        <input type="color" id="category-color" value="${DEFAULT_CATEGORY_COLORS[categories.length % DEFAULT_CATEGORY_COLORS.length]}">
+                        <div class="color-presets">
+                            ${DEFAULT_CATEGORY_COLORS.map(color =>
+                                `<button type="button" class="color-preset" data-color="${color}" style="background-color: ${color}" title="${color}"></button>`
+                            ).join('')}
+                        </div>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-primary" id="saveCategoryBtn">Save Category</button>
+                    <button type="button" class="btn btn-secondary" id="cancelCategoryBtn">Cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const closeModal = () => modal.remove();
+
+    document.getElementById('categoryModalCloseBtn').addEventListener('click', closeModal);
+    document.getElementById('cancelCategoryBtn').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+
+    // Color preset buttons
+    modal.querySelectorAll('.color-preset').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.getElementById('category-color').value = btn.dataset.color;
+        });
+    });
+
+    // Save button
+    document.getElementById('saveCategoryBtn').addEventListener('click', () => {
+        const name = document.getElementById('category-name').value.trim();
+        const color = document.getElementById('category-color').value;
+
+        if (!name) {
+            alert('Please enter a category name.');
+            return;
+        }
+
+        const newCategory = addCategory(name, color);
+        if (!newCategory) {
+            alert('A category with this name already exists.');
+            return;
+        }
+
+        closeModal();
+        if (onSave) onSave(newCategory);
+    });
+
+    // Focus the name input
+    setTimeout(() => document.getElementById('category-name').focus(), 100);
+}
+
+// Show category management modal
+function showCategoryManagementModal() {
+    const modal = document.createElement('div');
+    modal.className = 'category-modal';
+
+    const renderCategoryList = () => {
+        return categories.length === 0
+            ? '<div class="empty-categories">No categories yet. Create your first category!</div>'
+            : categories.map(cat => `
+                <div class="category-item" data-category-id="${escapeHtml(cat.id)}">
+                    <div class="category-item-color" style="background-color: ${escapeHtml(cat.color)}"></div>
+                    <span class="category-item-name">${escapeHtml(cat.name)}</span>
+                    <div class="category-item-actions">
+                        <button class="btn btn-small edit-category-btn" data-category-id="${escapeHtml(cat.id)}" title="Edit">✏️</button>
+                        <button class="btn btn-small delete-category-btn" data-category-id="${escapeHtml(cat.id)}" title="Delete">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+    };
+
+    modal.innerHTML = `
+        <div class="category-modal-content category-management">
+            <div class="category-modal-header">
+                <h3>Manage Categories</h3>
+                <button class="category-modal-close" id="categoryMgmtCloseBtn">&times;</button>
+            </div>
+            <div class="category-modal-body">
+                <div class="category-list" id="categoryList">
+                    ${renderCategoryList()}
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-primary" id="addNewCategoryBtn">+ Add Category</button>
+                    <button type="button" class="btn btn-secondary" id="closeCategoryMgmtBtn">Close</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const closeModal = () => {
+        modal.remove();
+        showSummary(); // Refresh cards to show updated categories
+    };
+
+    document.getElementById('categoryMgmtCloseBtn').addEventListener('click', closeModal);
+    document.getElementById('closeCategoryMgmtBtn').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+
+    // Add new category
+    document.getElementById('addNewCategoryBtn').addEventListener('click', () => {
+        showAddCategoryModal((newCategory) => {
+            document.getElementById('categoryList').innerHTML = renderCategoryList();
+            attachCategoryListeners();
+        });
+    });
+
+    const attachCategoryListeners = () => {
+        // Edit category buttons
+        modal.querySelectorAll('.edit-category-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const catId = btn.dataset.categoryId;
+                const category = getCategoryById(catId);
+                if (category) {
+                    showEditCategoryModal(category, () => {
+                        document.getElementById('categoryList').innerHTML = renderCategoryList();
+                        attachCategoryListeners();
+                    });
+                }
+            });
+        });
+
+        // Delete category buttons
+        modal.querySelectorAll('.delete-category-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const catId = btn.dataset.categoryId;
+                const category = getCategoryById(catId);
+                if (category && confirm(`Delete category "${category.name}"? Papers with this category will have their category removed.`)) {
+                    deleteCategory(catId);
+                    document.getElementById('categoryList').innerHTML = renderCategoryList();
+                    attachCategoryListeners();
+                }
+            });
+        });
+    };
+
+    attachCategoryListeners();
+}
+
+// Show edit category modal
+function showEditCategoryModal(category, onSave) {
+    const modal = document.createElement('div');
+    modal.className = 'category-modal';
+    modal.innerHTML = `
+        <div class="category-modal-content">
+            <div class="category-modal-header">
+                <h3>Edit Category</h3>
+                <button class="category-modal-close" id="editCategoryCloseBtn">&times;</button>
+            </div>
+            <div class="category-modal-body">
+                <div class="form-group">
+                    <label for="edit-category-name">Category Name:</label>
+                    <input type="text" id="edit-category-name" maxlength="100" value="${escapeHtml(category.name)}" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-category-color">Color:</label>
+                    <div class="color-picker-wrapper">
+                        <input type="color" id="edit-category-color" value="${escapeHtml(category.color)}">
+                        <div class="color-presets">
+                            ${DEFAULT_CATEGORY_COLORS.map(color =>
+                                `<button type="button" class="color-preset" data-color="${color}" style="background-color: ${color}" title="${color}"></button>`
+                            ).join('')}
+                        </div>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-primary" id="updateCategoryBtn">Update Category</button>
+                    <button type="button" class="btn btn-secondary" id="cancelEditCategoryBtn">Cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const closeModal = () => modal.remove();
+
+    document.getElementById('editCategoryCloseBtn').addEventListener('click', closeModal);
+    document.getElementById('cancelEditCategoryBtn').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+
+    // Color preset buttons
+    modal.querySelectorAll('.color-preset').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.getElementById('edit-category-color').value = btn.dataset.color;
+        });
+    });
+
+    // Update button
+    document.getElementById('updateCategoryBtn').addEventListener('click', () => {
+        const name = document.getElementById('edit-category-name').value.trim();
+        const color = document.getElementById('edit-category-color').value;
+
+        if (!name) {
+            alert('Please enter a category name.');
+            return;
+        }
+
+        const success = updateCategory(category.id, name, color);
+        if (!success) {
+            alert('A category with this name already exists.');
+            return;
+        }
+
+        closeModal();
+        if (onSave) onSave();
+    });
+
+    // Focus the name input
+    setTimeout(() => document.getElementById('edit-category-name').focus(), 100);
 }
 
 // Show settings modal
@@ -4498,6 +4969,21 @@ function showSettingsModal() {
                                 • Firefox/Safari: IndexedDB persistent storage (all browsers)<br>
                                 • All browsers: PDFs stored persistently across sessions</small>
                             </div>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h4 class="settings-section-title">Categories</h4>
+                <div class="category-settings">
+                    <p>Create and manage categories to organize your papers.</p>
+                    <div class="category-preview">
+                        ${categories.length === 0
+                            ? '<span class="no-categories">No categories created yet</span>'
+                            : categories.slice(0, 5).map(cat =>
+                                `<span class="category-badge-preview" style="background-color: ${escapeHtml(cat.color)}; color: ${getContrastColor(cat.color)}">${escapeHtml(cat.name)}</span>`
+                            ).join('') + (categories.length > 5 ? `<span class="more-categories">+${categories.length - 5} more</span>` : '')
+                        }
+                    </div>
+                    <button class="btn" id="manageCategoriesBtn">🏷️ Manage Categories</button>
                 </div>
             </div>
             <div class="settings-section">
@@ -4569,9 +5055,15 @@ function showSettingsModal() {
     document.getElementById('settingsCloseBtn').addEventListener('click', closeSettingsModal);
     document.getElementById('selectFolderBtn').addEventListener('click', handleSelectFolder);
     document.getElementById('clearFolderBtn').addEventListener('click', handleClearFolder);
-    document.getElementById('settingsClearAllBtn').addEventListener('click', function() {
+    document.getElementById('settingsClearAllBtn')?.addEventListener('click', function() {
         closeSettingsModal();
         clearData();
+    });
+
+    // Manage categories button
+    document.getElementById('manageCategoriesBtn')?.addEventListener('click', function() {
+        closeSettingsModal();
+        showCategoryManagementModal();
     });
 
     // Validate and persist the CrossRef mailto setting for polite pool requests.
