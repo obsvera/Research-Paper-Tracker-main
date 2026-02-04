@@ -4716,11 +4716,6 @@ function showAddCategoryModal(onSave) {
                     <label for="category-color">Color:</label>
                     <div class="color-picker-wrapper">
                         <input type="color" id="category-color" value="${DEFAULT_CATEGORY_COLORS[categories.length % DEFAULT_CATEGORY_COLORS.length]}">
-                        <div class="color-presets">
-                            ${DEFAULT_CATEGORY_COLORS.map(color =>
-                                `<button type="button" class="color-preset" data-color="${color}" style="background-color: ${color}" title="${color}"></button>`
-                            ).join('')}
-                        </div>
                     </div>
                 </div>
                 <div class="form-actions">
@@ -4739,13 +4734,6 @@ function showAddCategoryModal(onSave) {
     document.getElementById('cancelCategoryBtn').addEventListener('click', closeModal);
     modal.addEventListener('click', (e) => {
         if (e.target === modal) closeModal();
-    });
-
-    // Color preset buttons
-    modal.querySelectorAll('.color-preset').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.getElementById('category-color').value = btn.dataset.color;
-        });
     });
 
     // Save button
@@ -4882,11 +4870,6 @@ function showEditCategoryModal(category, onSave) {
                     <label for="edit-category-color">Color:</label>
                     <div class="color-picker-wrapper">
                         <input type="color" id="edit-category-color" value="${escapeHtml(category.color)}">
-                        <div class="color-presets">
-                            ${DEFAULT_CATEGORY_COLORS.map(color =>
-                                `<button type="button" class="color-preset" data-color="${color}" style="background-color: ${color}" title="${color}"></button>`
-                            ).join('')}
-                        </div>
                     </div>
                 </div>
                 <div class="form-actions">
@@ -4905,13 +4888,6 @@ function showEditCategoryModal(category, onSave) {
     document.getElementById('cancelEditCategoryBtn').addEventListener('click', closeModal);
     modal.addEventListener('click', (e) => {
         if (e.target === modal) closeModal();
-    });
-
-    // Color preset buttons
-    modal.querySelectorAll('.color-preset').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.getElementById('edit-category-color').value = btn.dataset.color;
-        });
     });
 
     // Update button
