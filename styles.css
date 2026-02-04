@@ -3135,14 +3135,15 @@ body[data-theme="dark-blue"] .pdf-canvas-container {
     align-items: center;
 }
 
-/* Category badge on cards - matches status-badge styling */
+/* Category badge on cards */
 .category-badge {
-    padding: 4px 8px;
+    display: inline-block;
+    padding: 4px 10px;
     border-radius: 12px;
     font-size: 11px;
-    font-weight: 500;
+    font-weight: 600;
     text-transform: uppercase;
-    display: inline-block;
+    letter-spacing: 0.5px;
     white-space: nowrap;
     max-width: 150px;
     overflow: hidden;
@@ -3305,13 +3306,13 @@ body[data-theme="dark-blue"] .pdf-canvas-container {
 /* Color picker wrapper */
 .color-picker-wrapper {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 10px;
 }
 
 .color-picker-wrapper input[type="color"] {
-    width: 50px;
-    height: 36px;
+    width: 60px;
+    height: 40px;
     padding: 2px;
     border: 2px solid var(--border-color);
     border-radius: 8px;
@@ -3326,6 +3327,26 @@ body[data-theme="dark-blue"] .pdf-canvas-container {
 .color-picker-wrapper input[type="color"]::-webkit-color-swatch {
     border-radius: 4px;
     border: none;
+}
+
+.color-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.color-preset {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.color-preset:hover {
+    transform: scale(1.15);
+    border-color: var(--text-primary);
 }
 
 /* Category list in management modal */
@@ -3419,4 +3440,9 @@ body[data-theme="dark-blue"] .category-preview {
 body[data-theme="dark"] .category-modal-close:hover,
 body[data-theme="dark-blue"] .category-modal-close:hover {
     background: rgba(255, 255, 255, 0.1);
+}
+
+body[data-theme="dark"] .color-preset:hover,
+body[data-theme="dark-blue"] .color-preset:hover {
+    border-color: #ffffff;
 }
