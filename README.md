@@ -1,5 +1,9 @@
 # Research Paper Tracker
 
+v0 - this project will no longer be updated or watched, but newer version coming soon!
+
+
+
 > **AI-Powered Research Management Tool - Compatible with Any LLM**
 
 A comprehensive web application for organizing dissertation research, tracking academic papers, and managing citations. Perfect for graduate students, researchers, and academics who need to keep track of their literature review process.
